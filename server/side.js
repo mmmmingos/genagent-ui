@@ -41,11 +41,13 @@ export function forkIds() {
   return ids;
 }
 
-const opts = (s, extra) => ({ model: MODELS.side, tools: READ_ONLY_TOOLS, userSettingsOnly: true, cwd: s.cwd && fs.existsSync(s.cwd) ? s.cwd : DATA, timeoutMs: 300000, onChild: (c) => children.set(s.id, c), ...extra });
+const opts = (s, extra) => ({ model: MODELS.side, tools: READ_ONLY_TOOLS, userSettingsOnly: true, cwd: s.cwd && fs.existsSync(s.cwd) ? s.cwd : DATA, timeoutMs: 300000, onChild: (c) => children.set(s.id, c), isCancelled: () => !!s.cancelled, ...extra });
 function track(s, r) { s.forkId = r.sessionId || s.forkId; s.forkIds = [...new Set([...(s.forkIds || []), s.forkId])]; s.contextTokens = r.contextTokens; s.cost += r.cost; forkCache.at = 0; }
 
 // Open a side discussion. Returns at once; the opener arrives later through the bus.
 export function open({ harness, file, mainId, cwd, topic }) {
+  // A Codex or Grok side chat reads that session's transcript, so it must exist first.
+  if (!(harness === "claude" && mainId) && !(file && fs.existsSync(file))) throw new Error("This session has no transcript yet. Try again after its first turn.");
   const id = crypto.randomUUID();
   const s = { id, harness, file, mainId, cwd, topic: topic || "", msgs: [], forkId: null, forkIds: [], contextTokens: 0, cost: 0, composed: "", createdAt: Date.now(), busy: true, err: "" };
   sides.set(id, s);
@@ -84,14 +86,14 @@ export async function message(id, text) {
 }
 
 // Write the single answer that goes back to the main agent.
-export async function compose(id) {
+export async function compose(id, known = []) {
   const s = raw(id);
   if (!s) throw new Error("Side discussion not found");
   if (s.busy) throw new Error("Still thinking");
   s.busy = true;
   try {
     const r = await claudeCall(opts(s, { resume: s.forkId,
-      prompt: `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion. Output only the message text, no preamble.` }));
+      prompt: `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion.${known.length ? ` The user has already decided these, so treat them as settled and don't ask for them again: ${known.map((k) => `"${String(k.title).slice(0, 200)}" = "${String(k.answer).slice(0, 300)}"`).join("; ")}.` : ""} Output only the message text, no preamble.` }));
     track(s, r);
     s.composed = String(r.result || "").trim();
   } finally { s.busy = false; children.delete(id); save(s); }
@@ -99,6 +101,7 @@ export async function compose(id) {
 }
 
 export function cancel(id) {
+  const s = sides.get(id); if (s) s.cancelled = true;
   const c = children.get(id);
   if (c) { c.cancelled = true; try { c.kill(); } catch {} children.delete(id); }
 }

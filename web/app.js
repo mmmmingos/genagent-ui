@@ -8,6 +8,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const api = async (path, body) => {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 403 && !S.authLost) { S.authLost = true; const b = document.createElement("div"); b.className = "authlost"; b.textContent = "GenUI Agent restarted. Close this window and open it again from the desktop shortcut."; document.body.appendChild(b); }
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   return j;
 };
@@ -28,8 +29,11 @@ const S = {
   sides: new Map(), sideOpen: false,
   plans: loadPlans(),
   ng: { goal: "", cwd: "", plan: null, busy: false, err: "", answers: {}, startedAt: 0, harness: "claude", going: false },
-  picker: null, toolsOpen: new Set(), inflight: new Set(), armed: null,
+  picker: null, toolsOpen: new Set(), inflight: new Set(), armed: null, pickTimers: new Map(), sentItems: loadSent(), permShown: new Map(), authLost: false,
 };
+function loadSent() { try { return new Map(JSON.parse(localStorage.getItem("genui.sent") || "[]")); } catch { return new Map(); } }
+function saveSent() { try { localStorage.setItem("genui.sent", JSON.stringify([...S.sentItems].slice(-200))); } catch {} }
+const norm = (t) => String(t || "").replace(/\s+/g, " ").trim();
 function loadPlans() { try { return JSON.parse(localStorage.getItem("genui.plans") || "[]").filter((p) => p && Array.isArray(p.steps) && p.steps.length); } catch { return []; } }
 function savePlans() { try { localStorage.setItem("genui.plans", JSON.stringify(S.plans.slice(0, 30))); } catch {} }
 const terms = new Map();
@@ -76,14 +80,14 @@ function mergeGen(file, gen) {
   const old = S.gens.get(file);
   S.gens.set(file, gen);
   if (!old) return;
-  const titles = new Map((gen.cards || []).map((c, i) => [c.title, i]));
+  // Cards are keyed by title, so a card that survives keeps its answer, picks and drafts as is.
+  const still = new Set((gen.cards || []).map((c) => c.title));
   const carried = S.carried.get(file) || [];
-  (old.cards || []).forEach((c, i) => {
-    const k = `${file}|${i}|${c.title}`, a = S.answers.get(k), sent = S.sentCards.has(k);
+  (old.cards || []).forEach((c) => {
+    if (still.has(c.title)) return;
+    const k = cardKeyOf(file, c), a = S.answers.get(k), sent = S.sentCards.has(k);
     S.answers.delete(k); S.sentCards.delete(k); S.picks.delete(k);
-    if (!a || sent) return;
-    if (titles.has(c.title)) S.answers.set(`${file}|${titles.get(c.title)}|${c.title}`, a);
-    else carried.push({ title: c.title, answer: a });
+    if (a && !sent) carried.push({ title: c.title, answer: a });
   });
   if (carried.length) S.carried.set(file, carried);
 }
@@ -95,7 +99,7 @@ const MORPH = {
   onBeforeElUpdated(from, to) {
     if (from.hasAttribute && from.hasAttribute("data-keep")) {
       // User-owned inputs keep their value; their labels still follow the state.
-      for (const a of ["placeholder", "aria-label", "disabled", "title"]) { if (to.hasAttribute(a)) from.setAttribute(a, to.getAttribute(a)); else from.removeAttribute(a); }
+      for (const a of ["placeholder", "aria-label", "disabled", "title", "data-draft"]) { if (to.hasAttribute(a)) from.setAttribute(a, to.getAttribute(a)); else from.removeAttribute(a); }
       return false;
     }
     return !from.isEqualNode(to);
@@ -142,20 +146,23 @@ const engShort = (h) => ({ claude: "Claude", codex: "Codex", grok: "Grok" }[h] |
 const refKey = (ref) => (ref.kind === "live" ? "L:" + ref.id : "F:" + ref.file);
 const nowAgo = (t) => ago(t).replace(" ago", "");
 
-function openCards(file, g) { return (g && g.cards ? g.cards : []).map((c, i) => ({ c, i, key: `${file}|${i}|${c.title}` })).filter((x) => x.c.kind !== "info" && !S.sentCards.has(x.key)); }
+const cardKeyOf = (file, c) => `${file}|${c.title}`;
+function openCards(file, g) { return (g && g.cards ? g.cards : []).map((c, i) => ({ c, i, key: cardKeyOf(file, c) })).filter((x) => x.c.kind !== "info" && !S.sentCards.has(x.key)); }
 
 // One state per live session, used everywhere (sidebar dot, header, card status, chips, footer).
 function liveState(l) {
   if (!l.alive) return "off";
   if (l.pendingAsk || l.pendingPermission || l.terminalNeeds || l.status === "needs") return "needs";
   if (l.status === "working" || l.status === "starting") return "run";
+  // Between a turn ending and its new cards arriving, the reply is still being read: not "your turn" yet.
+  if (l.file && S.genBusy.has(l.file)) return "reading";
   const g = genFor(l.file);
   if (g && (openCards(l.file, g).length || (S.carried.get(l.file) || []).length)) return "needs";
   if (g && g.status === "done") return "done";
   return "idle";
 }
-const STATE_LABEL = { needs: "Needs you", run: "Running", idle: "Your turn", done: "Done", off: "Ended" };
-const STAT_CLS = { needs: "needs", run: "run", idle: "idle", done: "done", off: "idle" };
+const STATE_LABEL = { needs: "Needs you", run: "Running", reading: "Reading the reply", idle: "Your turn", done: "Done", off: "Ended" };
+const STAT_CLS = { needs: "needs", run: "run", reading: "run", idle: "idle", done: "done", off: "idle" };
 
 function current() {
   if (!S.sel) return null;
@@ -174,7 +181,7 @@ const curSide = () => { const r = current(); return S.sideOpen && r ? S.sides.ge
 function sideHTML() {
   const live = [...S.live.values()].sort((a, b) => (b.lastActivity || b.createdAt) - (a.lastActivity || a.createdAt));
   const by = (st) => live.filter((l) => liveState(l) === st);
-  const groupsLive = [["Needs you", by("needs")], ["Running", by("run")], ["Your turn", [...by("idle"), ...by("done")]], ["Ended", by("off").slice(0, 6)]];
+  const groupsLive = [["Needs you", by("needs")], ["Running", [...by("run"), ...by("reading")]], ["Your turn", [...by("idle"), ...by("done")]], ["Ended", by("off").slice(0, 6)]];
   const liveFiles = new Set(live.map((l) => l.file).filter(Boolean));
   const q = S.search.trim().toLowerCase();
   const recent = S.saved.filter((s) => !liveFiles.has(s.file) && (!q || `${s.title} ${s.cwd} ${S.labels[s.harness]}`.toLowerCase().includes(q)));
@@ -187,9 +194,11 @@ function sideHTML() {
     const on = S.page === "session" && S.sel?.kind === "live" && S.sel.id === l.id;
     return `<button class="srow ${on ? "is-on" : ""}" id="sr-${esc(l.id)}" data-act="open-live" data-id="${esc(l.id)}" title="${esc(l.cwd)}"><span class="sdot ${st}"></span><span class="st">${esc(title(l))}</span><span class="sm"><span class="eng">${esc(engShort(l.harness))}</span>${st === "needs" ? "" : esc(nowAgo(l.lastActivity || l.createdAt))}</span></button>`;
   };
+  const titleCount = new Map(); recent.forEach((x) => { const t = (genFor(x.file) || {}).title || x.title; titleCount.set(t, (titleCount.get(t) || 0) + 1); });
   const savedRow = (s) => {
     const on = S.page === "session" && S.sel?.kind === "saved" && S.sel.file === s.file;
-    return `<button class="srow ${on ? "is-on" : ""}" id="ss-${hid(s.file)}" data-act="open-saved" data-file="${esc(s.file)}" data-h="${esc(s.harness)}" title="${esc(shortPath(s.cwd))} · ${esc(S.labels[s.harness])}"><span class="sdot ${s.waiting ? "needs" : "off"}"></span><span class="st">${esc((genFor(s.file) || {}).title || s.title)}</span><span class="sm"><span class="eng">${esc(shortPath(s.cwd))}</span>${esc(nowAgo(s.mtime))}</span></button>`;
+    const t = (genFor(s.file) || {}).title || s.title, dup = titleCount.get(t) > 1;
+    return `<button class="srow ${on ? "is-on" : ""}" id="ss-${hid(s.file)}" data-act="open-saved" data-file="${esc(s.file)}" data-h="${esc(s.harness)}" title="${esc(shortPath(s.cwd))} · ${esc(S.labels[s.harness])}"><span class="sdot ${s.waiting ? "needs" : "off"}"></span><span class="st">${esc(t)}${dup ? `<span class="t3"> · ${esc(shortPath(s.cwd))}</span>` : ""}</span><span class="sm"><span class="eng">${esc(shortPath(s.cwd))}</span>${esc(nowAgo(s.mtime))}</span></button>`;
   };
   const needsN = by("needs").length;
   return `
@@ -207,6 +216,8 @@ function sessionHTML(ref) {
   const st = ref.kind === "live" ? ref.state : null;
   const metaParts = [esc(shortPath(ref.cwd)), esc(S.labels[ref.harness])];
   if (ref.kind === "saved") metaParts.push("Saved", "read-only", esc(nowAgo(ref.mtime)));
+  const curStep = g ? (g.steps || []).findIndex((x) => x.state === "current") : -1;
+  if (g && curStep >= 0) metaParts.push(`step ${curStep + 1}/${g.steps.length}: ${esc(clip(g.steps[curStep].label, 40))}`);
   if (st === "needs" && ref.l.lastActivity) { const since = nowAgo(ref.l.lastActivity); metaParts.push(`<span class="wait">waiting${since !== "now" ? " " + esc(since) : ""}</span>`); }
   const hdot = st === "run" ? "var(--accent-dot)" : st === "needs" ? "var(--amber-dot)" : "";
   const hasSide = S.sides.has(refKey(ref));
@@ -217,7 +228,7 @@ function sessionHTML(ref) {
     <div class="head-r">
       ${ref.kind === "live" ? `<div class="seg" role="group" aria-label="View"><button aria-pressed="${S.tab === "flow"}" data-act="tab" data-tab="flow">Flow</button><button aria-pressed="${S.tab === "terminal"}" data-act="tab" data-tab="terminal">Terminal</button></div>` : ""}
       <button class="ibtn ${S.sideOpen && hasSide ? "is-on" : ""} ${hasSide ? "has-badge" : ""}" data-act="side-toggle" title="Side chat: talk it through without touching the session" aria-label="Side chat">${icon("chat")}</button>
-      ${ref.kind === "live" && ref.alive ? `<button class="ibtn ${S.armed?.act === "stop-session" ? "armed" : ""}" data-act="stop-session" title="${S.armed?.act === "stop-session" ? "Click again to stop this session" : "Stop this session"}" aria-label="Stop session">${icon("power")}</button>` : ""}
+      ${ref.kind === "live" && ref.alive ? `<button class="ibtn ${S.armed?.act?.startsWith("stop-session:") ? "armed" : ""}" data-act="stop-session" title="${S.armed?.act?.startsWith("stop-session:") ? "Click again to stop this session" : "Stop this session"}" aria-label="Stop session">${icon("power")}</button>` : ""}
     </div>
   </header>
   <div class="scroll" id="scroll" ${S.tab === "terminal" && ref.kind === "live" ? "hidden" : ""}><div class="stack">
@@ -237,15 +248,16 @@ function goalCard(ref, g) {
       <ol class="rail">${[62, 48, 70, 40].map((w) => `<li class="rrow next"><span class="rn"></span><span class="rl"><span style="display:block;width:${w}%;height:14px;border-bottom:1px solid var(--divider)"></span></span><span class="rm"></span></li>`).join("")}</ol>
       <div class="gfoot"><span class="now"><span class="spin"></span><span class="shimmer t2">${esc(label)}</span></span></div></section>`;
   }
-  const status = ref.kind === "live" ? ref.state : g.status === "done" ? "done" : g.status === "waiting" ? "needs" : "idle";
-  const statLabel = ref.kind === "live" ? STATE_LABEL[status] : g.status === "done" ? "Done" : g.status === "waiting" ? "Was waiting" : "Saved";
+  const stale = ref.kind === "live" ? (busy || (ref.l.lastActivity || 0) > (g.at || 0) + 1000) && ref.state !== "needs" && ref.state !== "run" : busy;
+  const status = ref.kind === "live" ? (ref.state === "reading" ? "run" : ref.state) : g.status === "done" ? "done" : g.status === "waiting" ? "needs" : "idle";
+  const statLabel = ref.kind === "live" ? STATE_LABEL[ref.state] : g.status === "done" ? "Done" : g.status === "waiting" ? "Was waiting" : "Saved";
   const steps = g.steps || [];
   let rows = steps.map((s, i) => ({ s, i }));
   let hiddenCount = 0;
   if (rows.length > 12 && !S.open.has("rail:" + ref.file)) { const firstCur = Math.max(0, steps.findIndex((s) => s.state !== "done")); hiddenCount = Math.max(0, Math.min(firstCur, rows.length - 10)); rows = rows.slice(hiddenCount); }
   const cur = status === "needs" ? "needs" : status === "run" ? "run" : status === "done" ? "done" : "idle";
   const rowHTML = ({ s, i }) => {
-    const state = s.state === "current" ? `current ${cur}` : s.state;
+    const state = s.state === "current" ? `current ${stale ? "idle" : cur}` : s.state;
     const mono = /^[\w.\/#@:+-]+$/.test(s.note || "") && /[#/.]/.test(s.note || "");
     return `<li class="rrow ${state}" id="rr-${hid(ref.file + i + s.label)}" data-decode>${s.state === "current" ? `<span class="band"></span>` : ""}<span class="rn"></span><span class="rl ${s.state === "current" && cur === "run" ? "shimmer" : ""}">${esc(s.label)}</span><span class="rm ${mono ? "mono" : ""}">${esc(s.note || "")}</span></li>`;
   };
@@ -253,10 +265,13 @@ function goalCard(ref, g) {
   let nowText = g.now || "";
   if (ref.kind === "live") {
     const l = ref.l, n = openCards(ref.file, g).length;
-    if (status === "run") { const c = steps.find((s) => s.state === "current"); nowText = l.lastActivity > g.at || !c ? "Working" : `Working on: ${c.label}`; }
+    if (ref.state === "reading") nowText = "Reading the reply";
+    else if (status === "run") { const c = steps.find((s) => s.state === "current"); nowText = l.lastActivity > g.at || !c ? "Working" : `Working on: ${c.label}`; }
     else if (status === "needs") nowText = l.pendingAsk ? "Waiting for your answer to its question" : l.pendingPermission ? "Waiting for your approval" : l.terminalNeeds ? l.terminalNeeds.text : n ? `Waiting for ${plural(n, "answer")} from you` : nowText;
     else if (status === "off") nowText = "Session ended";
-  }
+    else if (ref.state === "reading" || stale) nowText = "Reading the reply";
+    else if (status === "idle") nowText = g.status === "done" ? "Done. Your turn" : "Your turn";
+  } else if (stale) nowText = "Out of date · reading it again";
   const nowIcon = cur === "run" ? `<span class="spin"></span>` : cur === "needs" ? `<span style="color:var(--amber-dot);display:flex">${icon("alert")}</span>` : cur === "done" ? `<span style="color:var(--violet-dot);display:flex">${icon("check")}</span>` : icon("pause");
   return `<section class="card" id="goal">
     <div class="ghead"><h2 title="${esc(g.goal)}">${esc(g.title)}</h2>
@@ -267,7 +282,7 @@ function goalCard(ref, g) {
       ${hiddenCount ? `<li class="rrow done"><span class="rn"></span><button class="rl collapsed-rows" data-act="rail-expand">${plural(hiddenCount, "earlier step")} ${icon("chevd", "s12")}</button><span class="rm"></span></li>` : ""}
       ${rows.map(rowHTML).join("")}
     </ol>
-    <div class="gfoot"><span class="now">${nowIcon}<span class="${cur === "run" ? "shimmer" : ""}">${esc(nowText)}</span></span></div>
+    <div class="gfoot"><span class="now">${stale || ref.state === "reading" ? `<span class="spin"></span>` : nowIcon}<span class="${cur === "run" || stale ? "shimmer" : ""}">${esc(nowText)}</span></span></div>
   </section>`;
 }
 
@@ -280,7 +295,12 @@ function feed(ref) {
   if (lastUser >= 0) {
     const t = ev[lastUser].text.trim();
     // Answers sent from cards show as one quiet line, not echoed as a big bubble.
-    if (S.sentPayloads.has(t)) out.push(`<div class="disc sent-line" id="fb-${hid(t.slice(0, 80))}">${icon("check", "s12")}<span>Sent your answers</span></div>`);
+    const items = S.sentItems.get(norm(t));
+    if (items) {
+      const k = "sent:" + hid(norm(t)), open = S.toolsOpen.has(k);
+      out.push(`<div id="fb-${hid(t.slice(0, 80))}"><button class="disc sent-line" data-act="tools" data-k="${k}" aria-expanded="${open}">${icon("check", "s12")}<span>Sent ${plural(items.length, "answer")}</span>${icon("chev", "s12")}</button>
+        ${open ? `<div class="sent-list">${items.map((x) => `<div class="qsum"><span class="qq">${esc(x.title)}</span><span class="qa">${esc(x.answer)}</span></div>`).join("")}</div>` : ""}</div>`);
+    }
     else out.push(`<div class="bubble" id="fb-${hid(t.slice(0, 80))}" data-anim><div class="bclamp">${md(clip(t, 1200))}</div></div>`);
   }
   const tools = ev.slice(lastUser + 1).filter((e) => e.role === "tool");
@@ -329,12 +349,13 @@ function blockingCards(ref) {
   }
   if (l.pendingPermission) {
     const p = l.pendingPermission, i = p.input || {};
-    const isEdit = ["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(p.tool);
+    if (!S.permShown.has(p.id)) S.permShown.set(p.id, Date.now());
+    const isEdit = ["Edit", "Write", "MultiEdit"].includes(p.tool) && (i.old_string != null || i.content != null || Array.isArray(i.edits));
     const cmd = i.command || i.url || i.pattern || "";
     const risky = /\b(rm|del|rmdir|push|deploy|drop|reset\s+--hard|publish|curl|wget|iwr|Invoke-WebRequest)\b|[;&|]|\$\(/i.test(String(cmd));
     const detail = isEdit
       ? `<div class="pd">${esc(i.file_path || "")}</div>${i.old_string != null ? `<pre class="code diff"><span class="del">${esc(i.old_string)}</span>\n<span class="add">${esc(i.new_string || "")}</span></pre>` : i.content != null ? `<pre class="code">${esc(i.content)}</pre>` : (i.edits || []).map((e) => `<pre class="code diff"><span class="del">${esc(e.old_string)}</span>\n<span class="add">${esc(e.new_string)}</span></pre>`).join("")}`
-      : `<pre class="code">${esc(cmd || JSON.stringify(i, null, 2))}</pre>`;
+      : `<pre class="code">${esc(cmd && !/Edit|Write/.test(p.tool) ? cmd : JSON.stringify(i, null, 2))}</pre>`;
     h += `<section class="card qcard" id="perm-${esc(p.id)}" data-anim><div class="eyebrow">${icon("shield")}Approval<span class="stat needs"><i></i>Needs you</span></div>
       <h3>${esc(permTitle(p.tool, i))}?</h3>${risky ? `<p class="ctxl" style="color:var(--amber-ink)">This command can delete, publish, download or chain other commands. Read all of it.</p>` : ""}
       <div class="qbody permbody">${detail}</div>
@@ -384,17 +405,18 @@ const KIND = { choice: ["choice", "Choice"], approve: ["shield", "Approval"], in
 function genCards(ref, g) {
   if (!g || !g.cards || !g.cards.length) return "";
   const live = ref.kind === "live" && ref.alive;
-  return g.cards.map((c, i) => genCard(ref, c, i, live)).join("");
+  return g.cards.map((c, i) => (S.sentCards.has(cardKeyOf(ref.file, c)) ? "" : genCard(ref, c, i, live))).join("");
 }
 function genCard(ref, c, i, live) {
-  const key = `${ref.file}|${i}|${c.title}`, id = "gc-" + hid(key);
+  const key = cardKeyOf(ref.file, c), id = "gc-" + hid(key);
   const ans = S.answers.get(key), sent = S.sentCards.has(key);
   const [ic, noun] = KIND[c.kind] || ["info", "Note"];
   if ((ans || sent) && !S.reopen.has(key)) {
     return `<button class="card qsum-card ${sent ? "is-sent" : ""}" id="${id}" data-act="reopen" data-k="${esc(key)}" ${sent ? "disabled" : ""} title="${sent ? "Sent to the agent" : "Collected, not sent yet. Click to change it."}"><span class="qsum">${icon(ic)}<span class="qq">${esc(c.title)}</span><span class="qa">${esc(ans || "Sent")}</span>${sent ? icon("check", "ok") : `<span class="unsent">not sent yet</span>`}</span></button>`;
   }
   const ro = !live;
-  const stat = c.kind === "info" ? "" : c.kind === "teammate" ? `<span class="stat team"><i></i>${esc(c.owner || "Teammate")}</span>` : ro ? `<span class="stat idle"><i></i>Was asked</span>` : `<span class="stat needs"><i></i>Needs you</span>`;
+  const sd0 = S.sides.get(refKey(ref)), inSide0 = !!(sd0 && sd0.extra && sd0.extra.cardKey === key);
+  const stat = c.kind === "info" ? "" : inSide0 ? `<span class="stat run"><i></i>In side chat</span>` : c.kind === "teammate" ? `<span class="stat team"><i></i>${esc(c.owner || "Teammate")}</span>` : ro ? `<span class="stat idle"><i></i>Was asked</span>` : `<span class="stat needs"><i></i>Needs you</span>`;
   let body = "", foot = "";
   if (c.kind === "choice") {
     const picked = S.picks.get(key) || new Set();
@@ -419,7 +441,8 @@ function genCard(ref, c, i, live) {
   } else if (c.kind === "info") {
     body = c.draft ? `<div class="prose" style="font-size:var(--fs-body);line-height:var(--lh-body)">${md(c.draft)}</div>` : "";
   }
-  const discuss = c.kind !== "info" ? `<button class="btn btn-text" data-act="discuss" data-k="${esc(key)}" data-i="${i}">Discuss it</button>` : "";
+  const sdc = S.sides.get(refKey(ref)), inSide = !!(sdc && sdc.extra && sdc.extra.cardKey === key);
+  const discuss = c.kind === "info" ? "" : inSide ? `<button class="btn btn-text" data-act="side-toggle" style="color:var(--accent-ink)">Back to side chat</button>` : `<button class="btn btn-text" data-act="discuss" data-k="${esc(key)}" data-i="${i}">Discuss it</button>`;
   return `<section class="card qcard" id="${id}" data-anim>
     <div class="eyebrow">${icon(ic)}${noun}<span class="tag" title="GenUI Agent read this question from the agent's reply. Answers are collected here and sent together.">From the reply</span>${stat}</div>
     <h3>${esc(c.title)}</h3>${c.why && c.kind !== "teammate" ? `<p class="ctxl">${esc(c.why)}</p>` : ""}
@@ -441,7 +464,7 @@ function answerBar(ref, g) {
   if (!cards.length && !carried.length) return "";
   const left = cards.length - answered;
   return `<div class="answerbar" id="answerbar">
-    ${carried.length ? `<span class="t2" style="font-size:var(--fs-meta)">${plural(carried.length, "earlier answer")} not sent yet: ${esc(carried.map((c) => clip(c.title, 40)).join("; "))}</span>` : ""}
+    ${carried.length ? `<span class="t2" style="font-size:var(--fs-meta)">${plural(carried.length, "earlier answer")} not sent yet: ${esc(carried.map((c) => clip(c.title, 40)).join("; "))}</span><button class="btn btn-text" data-act="carried-drop">Drop ${carried.length === 1 ? "it" : "them"}</button>` : ""}
     <span class="sp"></span>${left && ready ? `<span class="t3" style="font-size:var(--fs-meta)">${left} still open · you can send now</span>` : ""}
     ${ready ? `<button class="btn btn-tint" data-act="send-answers" ${S.inflight.has("answers") ? "disabled" : ""}>${S.inflight.has("answers") ? `<span class="spin"></span>Sending` : `Send ${ready === 1 ? "answer" : `${ready} answers`}`}</button>` : ""}
   </div>`;
@@ -467,10 +490,10 @@ function composer(ref, g) {
   if (ref.kind === "saved") {
     const active = Date.now() - (ref.mtime || 0) < 120000;
     const act = active ? "fork" : "resume";
-    const armedNow = S.armed?.act === act;
+    const armedNow = S.armed?.act?.startsWith(act + ":");
     return `<div class="dock-note">${icon("eye")}<span>${active ? "This session is active somewhere else right now. Shown read-only." : "A saved session, shown read-only."}</span><button class="btn ${armedNow ? "btn-tint" : "btn-text"}" data-act="${act}" id="resume-btn">${armedNow ? (active ? "Click again: start a copy here" : "Click again: continue it here") : active ? "Fork it into a new session here" : "Resume it in a terminal"}</button></div>`;
   }
-  if (!ref.alive) return `<div class="dock-note"><span>This session has ended${ref.l.exitCode ? ` (exit code ${ref.l.exitCode})` : ""}.</span>${ref.harness === "claude" ? `<button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act === "resume" ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
+  if (!ref.alive) return `<div class="dock-note"><span>This session has ended${ref.l.exitCode ? ` (exit code ${ref.l.exitCode})` : ""}.</span>${ref.harness === "claude" ? `<button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
   const l = ref.l, working = ref.state === "run";
   const hasCards = openCards(ref.file, g).length > 0;
   const ph = l.pendingPermission ? "Answer the approval above first" : l.pendingAsk ? "Type your own answer to the question above" : hasCards ? `Message ${S.labels[ref.harness]} (separate from the answers above)` : `Reply to ${S.labels[ref.harness]}`;
@@ -523,10 +546,9 @@ function sideChatHTML(sd) {
   const forCard = !!(sd.extra.cardKey || sd.extra.ask);
   const busy = sd.busy || (d && d.busy);
   return `
-    <div class="sp-head"><div class="tt"><b>Side chat</b><small>${forked ? "Forked from the session · won't change it" : "Reads the session · won't change it"}</small></div><button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button></div>
+    <div class="sp-head"><div class="tt"><b>Side chat</b><small>${forked ? "A fork · the session isn't touched" : "Reads the session · it isn't touched"}</small></div><button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button></div>
     <div class="sp-meter">
-      <div class="l"><span class="num">${d ? `~${kt(discussTok)} tokens discussed here, kept out of the session` : "Starting"}</span></div>
-      <div class="l"><span class="t3 num">${receives ? `Sending adds ~${kt(receives)} tokens to the session${mainCtx ? ` (now ${mainCtx.pct}% full)` : ""}` : `The session gets nothing until you send${mainCtx ? ` · it's ${mainCtx.pct}% full` : ""}`}</span></div>
+      <div class="l"><span class="num">${d ? `~${kt(discussTok)} tokens here · ${receives ? `sending adds ~${kt(receives)}` : "nothing sent yet"}${mainCtx ? ` · session ${mainCtx.pct}% full` : ""}` : "Starting"}</span></div>
     </div>
     ${sd.topic ? `<div class="sp-topic">About <b>${esc(clip(sd.topic, 160))}</b></div>` : ""}
     <div class="sp-body" id="sp-body">
@@ -553,8 +575,12 @@ async function openSide(topic, extra = {}) {
   const mainId = ref.harness === "claude" ? ref.id : null;
   const sd = { ref: { kind: ref.kind, id: ref.id, harness: ref.harness, file: ref.file, cwd: ref.cwd, mainId }, topic, extra, data: null, busy: true, err: "", composing: false, composed: "" };
   S.sides.set(key, sd); S.sideOpen = true; render();
-  try { sd.data = await api("/api/side", { harness: ref.harness, file: ref.file, mainId, cwd: ref.cwd, topic }); sd.busy = !!sd.data.busy; }
-  catch (e) { sd.err = e.message; sd.busy = false; }
+  try {
+    sd.data = await api("/api/side", { harness: ref.harness, file: ref.file, mainId, cwd: ref.cwd, topic });
+    sd.busy = !!sd.data.busy; sd.err = sd.data.err || "";
+    // In case the opener finished before this window saw the update.
+    if (sd.busy) setTimeout(async () => { try { const d = await api(`/api/side/${sd.data.id}`); if (d && d.id && !d.busy && sd.busy) { sd.data = d; sd.busy = false; sd.err = d.err || ""; render(); scrollSide(); } } catch {} }, 4000);
+  } catch (e) { sd.err = e.message; sd.busy = false; }
   render(); setTimeout(() => $("#sp-in")?.focus(), 30);
 }
 function closeSide(cancelIt) {
@@ -567,10 +593,11 @@ function scrollSide() { setTimeout(() => { const b = $("#sp-body"); if (b) b.scr
 // ---- Overview (3.11) ---------------------------------------------------------------------
 function overviewHTML() {
   const live = [...S.live.values()];
-  const order = { needs: 0, run: 1, idle: 2, done: 3, off: 4 };
+  const order = { needs: 0, run: 1, reading: 1, idle: 2, done: 3, off: 4 };
   live.sort((a, b) => order[liveState(a)] - order[liveState(b)] || (b.lastActivity || 0) - (a.lastActivity || 0));
   const count = (st) => live.filter((l) => liveState(l) === st).length;
-  const hflow = (steps, cur) => `<div class="hflow">${(steps || []).slice(-10).map((s) => `<span class="hn ${s.state === "current" ? `current ${cur}` : s.state}" title="${esc(s.label)}"><span class="rn"></span><span class="hl">${esc(s.label)}</span></span>`).join("")}</div>`;
+  const win = (steps) => { steps = steps || []; const c = steps.findIndex((x) => x.state === "current"); const start = c < 0 ? Math.max(0, steps.length - 10) : Math.max(0, Math.min(c - 3, steps.length - 10)); return steps.slice(start, start + 10); };
+  const hflow = (steps, cur) => `<div class="hflow">${win(steps).map((s) => `<span class="hn ${s.state === "current" ? `current ${cur}` : s.state}" title="${esc(s.label)}"><span class="rn"></span><span class="hl">${esc(s.label)}</span></span>`).join("")}</div>`;
   const row = (l) => {
     const st = liveState(l), g = genFor(l.file);
     const cur = g && (g.steps || []).find((s) => s.state === "current");
@@ -601,10 +628,10 @@ function overviewHTML() {
       <span class="ovnow">${ns ? `Next: ${esc(ns.label)}${ns.harness === "you" ? " (yours)" : ""}` : "All steps done or started"}</span>
       <span class="ovm">${action}</span></div>`;
   };
-  const needs = count("needs"), run = count("run"), turn = count("idle"), done = count("done");
-  return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">every session as a flow, generated from its transcript</div></header>
+  const needs = count("needs"), run = count("run") + count("reading"), turn = count("idle"), done = count("done");
+  return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">Live and recent sessions, each as a flow read from its transcript</div></header>
   <div class="scroll"><div class="page">
-    <p class="summary"><b class="${needs ? "needs" : ""}">${needs}</b> need${needs === 1 ? "s" : ""} you · <b>${run}</b> running · <b>${turn}</b> waiting for your next message${done ? ` · <b>${done}</b> done` : ""}</p>
+    <p class="summary"><b class="${needs ? "needs" : ""}">${needs}</b> need${needs === 1 ? "s" : ""} you · <b>${run}</b> running · <b>${turn}</b> your turn${done ? ` · <b>${done}</b> done` : ""}</p>
     ${live.length ? `<section class="card ovcard">${live.map(row).join("")}</section>` : `<section class="card ovcard"><div class="ovempty"><span>Nothing running. Start a goal, or open a saved session on the left to see its flow.</span><button class="btn btn-tint" data-act="go" data-page="new">New goal</button></div></section>`}
     ${plans.length ? `<div class="sec">Plans</div><section class="card ovcard">${plans.map(planRow).join("")}</section>` : ""}
     ${recent.length ? `<div class="sec">Recently opened</div><section class="card ovcard">${recent.map(savedRow).join("")}</section>` : ""}
@@ -647,7 +674,7 @@ function newGoalHTML() {
         <button class="pill" data-act="ng-harness" title="Harness for “Start now”">${icon("term")}<span>${esc(S.labels[ng.harness] || "Claude Code")}</span></button><span class="sp"></span>
         <button class="btn btn-text" data-act="start-now" ${S.inflight.has("start-now") ? "disabled" : ""}>Start now</button>
         <button class="send" data-act="plan" aria-label="Plan it" title="Plan it into steps">${icon("up")}</button></div></div>
-      <div class="hint">Send to have the orchestrator plan it into steps and ask what it can up front. “Start now” skips planning and opens one session.</div>`}
+      <div class="hint">Send to plan it into steps and collect what each step needs from you. “Start now” skips planning and opens one session.</div>`}
   </div></div>`;
 }
 
@@ -677,8 +704,12 @@ document.addEventListener("click", async (e) => {
       case "term-yes": await api(`/api/sessions/${ref.id}/terminal`, { choice: "yes" }); break;
       case "term-no": await api(`/api/sessions/${ref.id}/terminal`, { choice: "no" }); break;
       case "term-open": S.tab = "terminal"; render(); break;
-      case "perm-allow": await api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: true }); break;
-      case "perm-deny": await api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: false }); break;
+      case "perm-allow": case "perm-deny": {
+        // A queued request can appear under the pointer right after the last one was answered.
+        if (Date.now() - (S.permShown.get(el.dataset.qid) || 0) < 600) break;
+        await guarded("perm", () => api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: a === "perm-allow" }));
+        break;
+      }
       case "perm-term": await api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: null }); S.tab = "terminal"; render(); break;
       // AskUserQuestion
       case "ask-pick": askPick(ref, el.dataset.ask, +el.dataset.j); break;
@@ -686,7 +717,7 @@ document.addEventListener("click", async (e) => {
       case "ask-else-send": askElse(ref, el.dataset.ask); break;
       case "ask-continue": askNext(ref, el.dataset.ask); break;
       case "ask-back": { const st = S.ask.get(el.dataset.ask); cancelAskTimer(st); st.step = Math.max(0, st.step - 1); render(); break; }
-      case "ask-undo": { const st = S.ask.get(el.dataset.ask); cancelAskTimer(st); st.picks[st.step] = new Set(); render(); break; }
+      case "ask-undo": { const st = S.ask.get(el.dataset.ask); cancelAskTimer(st); st.picks[st.step] = new Set(); st.other[st.step] = ""; render(); break; }
       case "ask-term": await api(`/api/sessions/${ref.id}/ask`, { qid: el.dataset.ask, answers: null }); S.tab = "terminal"; render(); break;
       case "ask-discuss": { const q = ref.l.pendingAsk; const st = askState(q); const x = q.questions[st.step]; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: q.id, step: st.step }); break; }
       // Generated cards
@@ -702,6 +733,7 @@ document.addEventListener("click", async (e) => {
       case "reopen": S.reopen.add(k); S.drafts.set(`input:${k}`, S.answers.get(k) || ""); S.answers.delete(k); render(); break;
       case "discuss": { const c = genFor(ref.file).cards[+el.dataset.i]; openSide(`${c.title}${c.why ? ` (${c.why})` : ""}${c.options ? `. Options: ${c.options.map((o) => o.label).join("; ")}` : ""}`, { cardKey: k }); break; }
       case "send-answers": await sendAnswers(ref); break;
+      case "carried-drop": S.carried.delete(ref.file); render(); break;
       case "compose-send": await composeSend(ref); break;
       case "resume": armed("resume", () => resume(ref, false)); break;
       case "fork": armed("fork", () => resume(ref, true)); break;
@@ -773,9 +805,9 @@ function go(page) {
   const sc = $(".scroll"); if (sc) sc.scrollTop = 0;
   if (page === "new") setTimeout(() => $("#ng-goal")?.focus(), 20);
 }
-function openLive(id) { S.page = "session"; S.sel = { kind: "live", id }; S.sideOpen = false; S.forceBottom = true; render(); ensureGen(); }
+function openLive(id) { S.armed = null; S.page = "session"; S.sel = { kind: "live", id }; S.sideOpen = false; S.forceBottom = true; render(); ensureGen(); }
 async function openSaved(file, harness) {
-  S.page = "session"; S.sel = { kind: "saved", file, harness }; S.tab = "flow"; S.sideOpen = false; render();
+  S.armed = null; S.page = "session"; S.sel = { kind: "saved", file, harness }; S.tab = "flow"; S.sideOpen = false; render();
   try { const v = await api(`/api/view?harness=${encodeURIComponent(harness)}&file=${encodeURIComponent(file)}`); S.views.set(file, v); if (v.gen) S.gens.set(file, v.gen); S.forceBottom = true; render(); ensureGen(); }
   catch (e) { S.views.set(file, { error: e.message, events: [] }); render(); }
 }
@@ -797,8 +829,8 @@ function pickOption(ref, key, i, j) {
   if (c.multi) { s.has(j) ? s.delete(j) : s.add(j); S.picks.set(key, s); render(); return; }
   S.picks.set(key, new Set([j])); render();
   // Single-select collects on click; hold briefly so the selection reads. Nothing is sent yet.
-  clearTimeout(S.pickTimer);
-  S.pickTimer = setTimeout(() => { if ((S.picks.get(key) || new Set()).has(j)) setAnswer(key, c.options[j].label); }, 600);
+  clearTimeout(S.pickTimers.get(key));
+  S.pickTimers.set(key, setTimeout(() => { S.pickTimers.delete(key); if ((S.picks.get(key) || new Set()).has(j)) setAnswer(key, c.options[j].label); }, 600));
 }
 function setAnswer(key, text) { S.answers.set(key, text); S.reopen.delete(key); for (const m of ["else", "chg", "self", "input"]) { S.open.delete(m + ":" + key); S.drafts.delete(`${m}:${key}`); } render(); }
 function fieldSend(mode, key) {
@@ -819,7 +851,7 @@ async function sendAnswers(ref) {
     if (!all.length) return;
     const text = all.length === 1 ? `${all[0].title}\n${all[0].answer}` : `Answers to your questions:\n${all.map((x, n) => `${n + 1}. ${x.title}\n   ${x.answer}`).join("\n")}`;
     items.forEach((x) => S.sentCards.add(x.key)); // optimistic, so a double-click can't send twice
-    try { await api(`/api/sessions/${ref.id}/send`, { text }); S.sentPayloads.add(text.trim()); S.carried.delete(ref.file); }
+    try { await api(`/api/sessions/${ref.id}/send`, { text }); S.sentItems.set(norm(text), all.map((x) => ({ title: x.title, answer: x.answer }))); saveSent(); S.carried.delete(ref.file); }
     catch (e) { items.forEach((x) => S.sentCards.delete(x.key)); throw e; }
   });
 }
@@ -835,7 +867,7 @@ async function composeSend(ref) {
   });
 }
 async function resume(ref, fork) {
-  const s = await api("/api/resume", { harness: ref.harness, id: ref.id, cwd: ref.cwd, confirm: true, fork });
+  const s = await api("/api/resume", { harness: ref.harness, id: ref.id, cwd: ref.cwd, confirm: true, fork, file: ref.file });
   S.live.set(s.id, s); openLive(s.id);
 }
 
@@ -852,6 +884,8 @@ function askPick(ref, askId, j) {
   armAskSend(ref, a, st);
 }
 function armAskSend(ref, a, st) {
+  if (st.until || st.sending) return; // already counting down
+  cancelAskTimer(st);
   st.until = Date.now() + 2000; render();
   st.tick = setInterval(render, 500);
   st.timer = setTimeout(() => { cancelAskTimer(st); submitAsk(ref.l.id, a.id); }, 2000);
@@ -884,17 +918,21 @@ async function submitAsk(id, askId) {
 async function sideMsg() {
   const sd = curSide(); const ta = $("#sp-in"); if (!ta || !sd || sd.busy || !sd.data || sd.data.busy) return;
   const v = ta.value.trim(); if (!v) return;
-  sd.data.msgs.push({ who: "me", text: v }); ta.value = ""; S.drafts.delete(`side:${sd.data.id}`); autosize(ta); sd.busy = true; sd.err = ""; render(); scrollSide();
-  try { sd.data = await api(`/api/side/${sd.data.id}/msg`, { text: v }); } catch (e) { sd.err = e.message; sd.data.msgs.pop(); ta.value = v; }
+  const mine = { who: "me", text: v };
+  sd.data.msgs.push(mine); ta.value = ""; S.drafts.delete(ta.dataset.draft); autosize(ta); sd.busy = true; sd.err = ""; render(); scrollSide();
+  try { sd.data = await api(`/api/side/${sd.data.id}/msg`, { text: v }); }
+  catch (e) { sd.err = e.message; const i = sd.data.msgs.indexOf(mine); if (i >= 0) sd.data.msgs.splice(i, 1); const t = $("#sp-in"); if (t && !t.value) t.value = v; }
   sd.busy = false; render(); scrollSide(); $("#sp-in")?.focus();
 }
 async function sideCompose() {
   const sd = curSide(); if (!sd || sd.busy) return;
   sd.busy = true; sd.composingBusy = true; render(); scrollSide();
-  try { const r = await api(`/api/side/${sd.data.id}/compose`, {}); sd.data = r; sd.composed = r.composed; sd.composing = true; S.drafts.set(`composed:${r.id}`, r.composed); } catch (e) { sd.err = e.message; }
+  const ref = current(), g = ref && genFor(ref.file);
+  const known = ref ? openCards(ref.file, g).filter((x) => x.key !== sd.extra.cardKey && S.answers.get(x.key)).map((x) => ({ title: x.c.title, answer: S.answers.get(x.key) })) : [];
+  try { const r = await api(`/api/side/${sd.data.id}/compose`, { known }); sd.data = r; sd.composed = r.composed; sd.composing = true; S.drafts.set(`composed:${r.id}`, r.composed); } catch (e) { sd.err = e.message; }
   sd.busy = false; sd.composingBusy = false; render(); focusComposed();
 }
-function focusComposed() { const t = $("#sp-composed"); if (t) { const sd = curSide(); if (sd && !t.value) t.value = sd.composed || ""; autosize(t); t.scrollTop = 0; t.focus(); t.setSelectionRange(0, 0); } }
+function focusComposed() { const t = $("#sp-composed"); if (t) { const sd = curSide(); if (sd && !t.value) t.value = sd.composed || ""; autosize(t); t.focus({ preventScroll: true }); t.setSelectionRange(0, 0); t.scrollTop = 0; } }
 // From a card: the composed text becomes that card's answer (sent with the others). From an agent's question: it answers that question.
 function sideUse() {
   const sd = curSide(); if (!sd) return;
@@ -970,6 +1008,7 @@ function closePicker() { $(".picker")?.remove(); S.picker = null; }
 // ---- Bits ---------------------------------------------------------------------
 // Two-step buttons: the first click arms (shown in the button itself), the second acts. Kept in state so renders don't drop it.
 function armed(act, fn) {
+  const r = current(); act = `${act}:${r ? r.id || r.file : ""}`;
   if (S.armed && S.armed.act === act && Date.now() < S.armed.until) { S.armed = null; render(); Promise.resolve(fn()).catch((e) => toast(e.message, "", "fail")); return; }
   S.armed = { act, until: Date.now() + 3500 }; render();
   setTimeout(() => { if (S.armed && S.armed.act === act && Date.now() >= S.armed.until) { S.armed = null; render(); } }, 3600);

@@ -492,3 +492,14 @@ pre.diff .add { color: var(--green-ink); display: block; }
 .hn.done .hl { color: var(--text-2); }
 .hn.current .hl { color: var(--text-1); font-weight: 500; }
 .hn.current.needs .hl { color: var(--amber-ink); }
+
+/* ---- QA round 2 ---- */
+.sent-line .ic:last-child { width: 12px; height: 12px; color: var(--text-3); transition: transform var(--t-fast) var(--ease-out); }
+.sent-line[aria-expanded="true"] .ic:last-child { transform: rotate(90deg); }
+.sent-list { margin: 4px 0 0 20px; border-left: 1.5px solid var(--divider); }
+.sent-list .qsum { min-height: 32px; padding: 4px 12px; }
+.authlost { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 70; background: var(--amber-tint); color: var(--amber-ink); border: 1px solid var(--amber-ring); border-radius: var(--r-pop); padding: 10px 16px; font-size: var(--fs-meta); box-shadow: var(--shadow-pop); }
+.sp-topic { padding-bottom: 12px; border-bottom: 1px solid var(--divider); }
+.ovrow { grid-template-columns: 210px minmax(0, 1fr) 150px 64px; }
+.hn .hl { font-size: 12px; line-height: 16px; color: var(--text-2); }
+.hn.next .hl { color: var(--text-3); }

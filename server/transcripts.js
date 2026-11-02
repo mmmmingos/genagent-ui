@@ -56,7 +56,8 @@ export function parseClaude(lines) {
         events.push({ role: "tool_result", text: clip(typeof c[0].content === "string" ? c[0].content : claudeText(c[0].content), 400), t: l.timestamp });
         continue;
       }
-      const text = claudeText(c);
+      // Long pastes are recorded wrapped in <pasted_content>; show what was actually typed.
+      const text = claudeText(c).replace(/<pasted_content[^>]*>\s*([\s\S]*?)\s*<\/pasted_content>/g, "$1");
       if (isNoise(text)) continue;
       events.push({ role: "user", text, t: l.timestamp });
     }
@@ -84,9 +85,12 @@ export function parseClaude(lines) {
 // ---- Codex --------------------------------------------------------------------
 export function parseCodex(lines) {
   const events = [];
-  let cwd = "", id = "", context = null, model = "";
+  let cwd = "", id = "", context = null, model = "", turn = null;
   for (const l of lines) {
     const p = l.payload || {};
+    // Codex marks each turn's start and end explicitly; that beats guessing from silence.
+    if (l.type === "event_msg" && p.type === "task_started") turn = "running";
+    if (l.type === "event_msg" && (p.type === "task_complete" || p.type === "turn_aborted")) turn = "done";
     if (l.type === "session_meta") { cwd = p.cwd || cwd; id = p.id || p.session_id || id; }
     if (l.type === "turn_context" && p.cwd) cwd = cwd || p.cwd;
     if (l.type === "event_msg" && p.type === "task_started" && p.model_context_window) context = { window: p.model_context_window, used: 0, pct: 0 };
@@ -111,7 +115,7 @@ export function parseCodex(lines) {
     if (l.type === "turn_context" && p.model) model = p.model;
   }
   const firstUser = events.find((e) => e.role === "user");
-  return { events, cwd, id, model, context, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
+  return { events, cwd, id, model, context, turn, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
 }
 
 // ---- Grok ---------------------------------------------------------------------

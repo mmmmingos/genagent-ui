@@ -14,7 +14,7 @@ const SANDBOX = path.join(ROOT, "sandbox", "e2e-" + Date.now());
 fs.mkdirSync(SANDBOX, { recursive: true });
 fs.writeFileSync(path.join(SANDBOX, "README.md"), "# e2e sandbox\n");
 
-const env = { ...process.env, GENUI_PORT: String(PORT) };
+const env = { ...process.env, GENUI_PORT: String(PORT), GENUI_TEST: "1" };
 for (const k of Object.keys(env)) if (/^CLAUDE(CODE)?_|^CLAUDECODE$/.test(k)) delete env[k];
 const srv = spawn(process.execPath, [path.join(ROOT, "server", "index.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
 srv.stderr.on("data", (d) => process.stderr.write("[server] " + d));
@@ -32,7 +32,9 @@ try {
   check(`saved sessions listed (${st.saved.length})`, st.saved.length > 0);
 
   // The window's cookie is minted per launch: exchange the install token for it like the launcher does.
-  const login = await fetch(`http://127.0.0.1:${PORT}/?t=${TOKEN}`, { redirect: "manual" });
+  const { code } = await (await fetch(`http://127.0.0.1:${PORT}/launch`, { method: "POST", headers: { "x-genui-token": TOKEN } })).json();
+  const login = await fetch(`http://127.0.0.1:${PORT}/?c=${code}`, { redirect: "manual" });
+  check("launch code is single-use", (await fetch(`http://127.0.0.1:${PORT}/?c=${code}`, { redirect: "manual" })).status === 403);
   const cookie = (login.headers.get("set-cookie") || "").split(";")[0];
   check("window cookie issued", /^genui=[a-f0-9]{48}$/.test(cookie));
   ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers: { cookie, origin: `http://127.0.0.1:${PORT}` } });

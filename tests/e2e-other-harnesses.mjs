@@ -10,7 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const which = process.argv.slice(2).length ? process.argv.slice(2) : ["codex", "grok"];
 const PORT = 4397;
 const TOKEN = fs.readFileSync(path.join(os.homedir(), ".genui-agent", "token"), "utf8").trim();
-const env = { ...process.env, GENUI_PORT: String(PORT) };
+const env = { ...process.env, GENUI_PORT: String(PORT), GENUI_TEST: "1" };
 for (const k of Object.keys(env)) if (/^CLAUDE(CODE)?_|^CLAUDECODE$/.test(k)) delete env[k];
 const srv = spawn(process.execPath, [path.join(ROOT, "server", "index.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

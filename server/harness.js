@@ -49,7 +49,7 @@ export function launchArgs(harness, { id, settingsFile, prompt, resume, fork, na
   prompt = safePrompt(prompt);
   if (harness === "claude") {
     const a = [];
-    if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session"); } else a.push("--session-id", id);
+    if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session", "--session-id", id); } else a.push("--session-id", id);
     if (settingsFile) a.push("--settings", settingsFile);
     if (name) a.push("-n", name);
     if (model) a.push("--model", model);
@@ -64,7 +64,7 @@ export function launchArgs(harness, { id, settingsFile, prompt, resume, fork, na
   }
   // grok
   const a = [];
-  if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session"); }
+  if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session", "--session-id", id); }
   if (model) a.push("-m", model);
   if (prompt) a.push(prompt);
   return a;

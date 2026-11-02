@@ -5,7 +5,7 @@ import { DATA, cleanEnv } from "./config.js";
 import { resolveBin } from "./harness.js";
 
 // Separate lanes, so slow side chats and plans never starve card generation.
-const LANES = { gen: { max: 2, running: 0, queue: [] }, agent: { max: 3, running: 0, queue: [] } };
+const LANES = { gen: { max: 2, running: 0, queue: [] }, agent: { max: 3, running: 0, queue: [] }, plan: { max: 1, running: 0, queue: [] } };
 function slot(lane) { const L = LANES[lane]; return new Promise((res) => { if (L.running < L.max) { L.running++; res(); } else L.queue.push(res); }); }
 function release(lane) { const L = LANES[lane]; L.running--; const n = L.queue.shift(); if (n) { L.running++; n(); } }
 
@@ -32,6 +32,7 @@ export async function claudeCall(opts) {
   const lane = opts.lane || "agent";
   await slot(lane);
   try {
+    if (opts.isCancelled && opts.isCancelled()) throw new Error("Cancelled");
     return await new Promise((resolve, reject) => {
       const child = spawn(bin.file, [...bin.pre, ...a], { cwd: opts.cwd || DATA, env: cleanEnv(), windowsHide: true });
       if (opts.onChild) opts.onChild(child);

@@ -52,4 +52,6 @@ App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-
 
 ## Security
 
-The server listens on 127.0.0.1 only and answers only to its exact host and origin. The window gets a per-launch cookie (the install token is only exchanged for it); API calls from other local ports are refused. Each Claude Code session gets its own hook secret, and Codex/Grok sessions get no GenUI credentials at all. Text sent into a terminal is stripped of control characters. Planner and side-chat calls load only your user-level Claude settings and no MCP servers, never a project folder's own settings.
+The server listens on 127.0.0.1 only and answers only to its exact host and origin. The window is opened with a one-time launch code (valid 60 seconds) and gets a per-launch cookie; requests from other local ports are refused. The install token in `~/.genui-agent/token` can only mint a launch code (and unlock the API for the test suite when `GENUI_TEST=1`). Each Claude Code session gets its own hook secret, and Codex/Grok sessions get no GenUI credentials. Text sent into a terminal is stripped of control characters. Planner and side-chat calls load only your user-level Claude settings and no MCP servers, never a project folder's own settings.
+
+The remaining limit is the usual one for local tools: a program already running as your Windows user can read your files, including that token, so it could open its own window onto the app. Don't run untrusted code as your own user.

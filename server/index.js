@@ -24,10 +24,15 @@ const log = (...a) => fs.appendFileSync(path.join(DATA, "server.log"), `[${new D
 
 // The window's credential is minted per launch, so the long-lived install token never sits in a cookie.
 const WINDOW_SECRET = crypto.randomBytes(24).toString("hex");
+// The window is opened with a one-time code (valid 60 s), never with the install token itself.
+const launchCodes = new Map();
+function mintCode() { const c = crypto.randomBytes(16).toString("hex"); launchCodes.set(c, Date.now() + 60000); return c; }
+// The install token unlocks the API only for the test suite; otherwise it can only mint a launch code.
+const TEST_MODE = process.env.GENUI_TEST === "1";
 
 function authed(req) {
   const h = req.headers["x-genui-token"];
-  if (h && safeEqual(h, TOKEN)) return true;
+  if (TEST_MODE && h && safeEqual(h, TOKEN)) return true;
   const c = /(?:^|;\s*)genui=([a-f0-9]+)/.exec(req.headers.cookie || "");
   if (!c || !safeEqual(c[1], WINDOW_SECRET)) return false;
   // A cookie alone is not enough: other ports on 127.0.0.1 are "same-site" and would send it too.
@@ -68,6 +73,10 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === "/health") return json(res, 200, { ok: true, app: "genui-agent" });
+    if (p === "/launch" && req.method === "POST") {
+      if (!safeEqual(String(req.headers["x-genui-token"] || ""), TOKEN)) return json(res, 403, {});
+      return json(res, 200, { code: mintCode() });
+    }
 
     // Hooks from Claude Code sessions the app started. Each session has its own secret.
     if (p.startsWith("/hook/") && req.method === "POST") {
@@ -82,10 +91,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // First visit with ?t=<install token> sets the per-launch cookie, then the address bar is cleaned.
+    // First visit with a one-time launch code sets the per-launch cookie, then the address bar is cleaned.
     if (p === "/") {
-      const t = url.searchParams.get("t");
-      if (t && safeEqual(t, TOKEN)) {
+      const c = url.searchParams.get("c");
+      const exp = c && launchCodes.get(c);
+      if (exp) launchCodes.delete(c);
+      if (exp && exp > Date.now()) {
         res.writeHead(302, { "set-cookie": `genui=${WINDOW_SECRET}; HttpOnly; SameSite=Strict; Path=/`, location: "/" });
         return res.end();
       }
@@ -110,7 +121,8 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/resume" && req.method === "POST") {
       if (!B.confirm) return json(res, 400, { error: "Resuming a saved session needs confirmation" });
       checkId(B.id);
-      const s = live.start({ harness: B.harness, cwd: B.cwd, resume: B.id, fork: !!B.fork, origin: B.fork ? "forked" : "resumed" });
+      const file = !B.fork && B.file ? findFile(B.harness, B.file) : null;
+      const s = live.start({ harness: B.harness, cwd: B.cwd, resume: B.id, fork: !!B.fork, file, origin: B.fork ? "forked" : "resumed" });
       return json(res, 200, live.summary(s));
     }
     if (m) {
@@ -143,7 +155,7 @@ const server = http.createServer(async (req, res) => {
       const [, id, action] = sm; checkId(id);
       if (!action) return json(res, 200, side.get(id) || {});
       if (action === "msg") return json(res, 200, await side.message(id, String(B.text || "")));
-      if (action === "compose") return json(res, 200, await side.compose(id));
+      if (action === "compose") return json(res, 200, await side.compose(id, Array.isArray(B.known) ? B.known.slice(0, 20) : []));
       if (action === "sent") return json(res, 200, side.markSent(id, B.text));
       if (action === "cancel") { side.cancel(id); return json(res, 200, { ok: true }); }
     }
@@ -209,8 +221,8 @@ live.bus.on("session", (summary, what) => {
 });
 
 // ---- Start, and open the app window ----------------------------------------------------
-function openWindow() {
-  const url = `${ORIGIN}/?t=${TOKEN}`;
+function openWindow(code = mintCode()) {
+  const url = `${ORIGIN}/?c=${code}`;
   const candidates = [
     path.join(process.env["ProgramFiles"] || "C:/Program Files", "Google/Chrome/Application/chrome.exe"),
     path.join(process.env["ProgramFiles(x86)"] || "C:/Program Files (x86)", "Microsoft/Edge/Application/msedge.exe"),
@@ -234,7 +246,8 @@ async function alreadyRunning() {
 
 const wantOpen = process.argv.includes("--open");
 if (await alreadyRunning()) {
-  if (wantOpen) openWindow();
+  // Ask the running instance for a one-time code, then open a window onto it.
+  if (wantOpen) { try { const r = await fetch(`${ORIGIN}/launch`, { method: "POST", headers: { "x-genui-token": TOKEN } }); const j = await r.json(); openWindow(j.code); } catch {} }
   process.exit(0);
 }
 server.listen(PORT, HOST, () => {

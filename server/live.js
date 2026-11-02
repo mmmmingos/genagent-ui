@@ -60,7 +60,7 @@ function changed(s, what = "session") {
 }
 
 // Start a harness in a terminal. Returns the session.
-export function start({ harness, cwd, prompt, name, model, resume, fork, origin = "app", goalHint }) {
+export function start({ harness, cwd, prompt, name, model, resume, fork, file, origin = "app", goalHint }) {
   if (!HARNESSES[harness]) throw new Error("Unknown harness");
   const bin = resolveBin(HARNESSES[harness].bin);
   if (!bin) throw new Error(`${HARNESSES[harness].label} isn't installed`);
@@ -95,7 +95,9 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, origin 
     changed(s);
   });
   if (!prompt && harness !== "claude") setTimeout(() => { if (s.status === "starting") { s.status = "idle"; changed(s); } }, 4000);
-  findTranscript(s);
+  // Resuming (not forking) keeps writing to the saved transcript, so bind it directly.
+  if (file && resume && !fork) { s.file = file; setTimeout(() => watch(s), 300); }
+  else findTranscript(s);
   persist();
   changed(s, "started");
   return s;
@@ -176,12 +178,14 @@ function watch(s) {
         const parsed = readSession(s.harness, s.file);
         s.context = parsed.context;
         bus.emit("transcript", s.id, parsed);
-        // Codex and Grok have no hooks here: the transcript growing is the agent working, and it
-        // going quiet is the end of a turn (terminal repaints and resizes don't count).
-        if (s.harness !== "claude" && grew && s.alive) {
+        // Codex writes explicit turn markers; Grok has none, so a long silence ends its turn.
+        if (s.harness === "codex" && s.alive && parsed.turn) {
+          if (parsed.turn === "running" && s.status !== "working") { s.status = "working"; s.terminalNeeds = null; changed(s); }
+          if (parsed.turn === "done" && (s.status === "working" || s.status === "starting") && grew) { s.status = "idle"; changed(s, "turn-end"); }
+        } else if (s.harness === "grok" && grew && s.alive) {
           if (s.status !== "working") { s.status = "working"; s.terminalNeeds = null; changed(s); }
           clearTimeout(s.quietTimer);
-          s.quietTimer = setTimeout(() => { if (s.alive && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); } }, 6000);
+          s.quietTimer = setTimeout(() => { if (s.alive && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); } }, 20000);
         }
       }
     } catch {}
@@ -191,7 +195,12 @@ function watch(s) {
 }
 
 // ---- Input -----------------------------------------------------------------
-export function write(id, data) { const s = sessions.get(id); if (s?.alive) s.pty.write(data); }
+export function write(id, data) {
+  const s = sessions.get(id); if (!s?.alive) return;
+  s.pty.write(data);
+  // Answering in the terminal itself: the "waiting in the terminal" card has done its job.
+  if (s.terminalNeeds && s.terminalNeeds.kind === "menu" && /[\r\n]/.test(data)) { s.terminalNeeds = null; s.status = "working"; changed(s); }
+}
 export function resize(id, cols, rows) { const s = sessions.get(id); if (s?.alive && cols > 0 && rows > 0) try { s.pty.resize(Math.max(20, Math.min(cols, 500)), Math.max(5, Math.min(rows, 300))); } catch {} }
 
 // Send a message as if typed: paste it as one block, then press Enter. Control characters are

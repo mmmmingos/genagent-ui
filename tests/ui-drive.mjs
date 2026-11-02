@@ -15,7 +15,7 @@ const SANDBOX = path.join(ROOT, "sandbox", "ui-" + Date.now());
 fs.mkdirSync(SANDBOX, { recursive: true });
 fs.writeFileSync(path.join(SANDBOX, "notes.md"), "# Landing page\nWe are writing a landing page for a coffee subscription.\n");
 
-const env = { ...process.env, GENUI_PORT: String(PORT) };
+const env = { ...process.env, GENUI_PORT: String(PORT), GENUI_TEST: "1" };
 for (const k of Object.keys(env)) if (/^CLAUDE(CODE)?_|^CLAUDECODE$/.test(k)) delete env[k];
 const srv = spawn(process.execPath, [path.join(ROOT, "server", "index.js")], { env, stdio: ["ignore", "pipe", "pipe"] });
 srv.stderr.on("data", (d) => process.stderr.write("[server] " + d));
@@ -41,7 +41,8 @@ try {
   const theme = process.env.THEME || "light";
   await sendCdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 920, deviceScaleFactor: 1, mobile: false });
   await sendCdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
-  await sendCdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/?t=${TOKEN}` });
+  const { code } = await (await fetch(`http://127.0.0.1:${PORT}/launch`, { method: "POST", headers: { "x-genui-token": TOKEN } })).json();
+  await sendCdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/?c=${code}` });
   check("app loaded", await waitFor(`!!document.querySelector('#side .srow-new')`, 15000));
   await sleep(1200);
   await shot(`01-overview-${theme}`);
