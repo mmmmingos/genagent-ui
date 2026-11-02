@@ -18,12 +18,12 @@ export function resolveBin(name) {
     else if (cmd) {
       const txt = fs.readFileSync(cmd, "utf8");
       const dir = path.dirname(cmd);
-      const exeIn = txt.match(/"%dp0%\\([^"]+\.exe)"/i);
-      const jsIn = txt.match(/"%dp0%\\([^"]+\.(?:c?js|mjs))"/i);
+      const exeIn = txt.match(/"%~?dp0%?\\([^"]+\.exe)"/i);
+      const jsIn = txt.match(/"%~?dp0%?\\([^"]+\.(?:c?js|mjs))"/i);
       // A JS entry point wins: shims for node CLIs also mention node.exe itself.
+      // There is no cmd.exe fallback: prompts would go through the shell's parser.
       if (jsIn) found = { file: process.execPath, pre: [path.join(dir, jsIn[1])] };
       else if (exeIn && !/(^|\\)node\.exe$/i.test(exeIn[1])) found = { file: path.join(dir, exeIn[1]), pre: [] };
-      else found = { file: process.env.ComSpec || "cmd.exe", pre: ["/c", cmd] };
     } else if (where[0]) found = { file: where[0], pre: [] };
   } catch { /* not installed */ }
   cache[name] = found;
@@ -42,11 +42,14 @@ export function available() {
   return out;
 }
 
-// Arguments for a new interactive session, or for resuming one.
-export function launchArgs(harness, { id, settingsFile, prompt, resume, name, model }) {
+// Arguments for a new interactive session, resuming one, or forking one.
+// A prompt starting with "-" gets a leading space so the CLI can't read it as a flag.
+const safePrompt = (p) => (p && /^\s*-/.test(p) ? " " + p : p);
+export function launchArgs(harness, { id, settingsFile, prompt, resume, fork, name, model }) {
+  prompt = safePrompt(prompt);
   if (harness === "claude") {
     const a = [];
-    if (resume) a.push("--resume", resume); else a.push("--session-id", id);
+    if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session"); } else a.push("--session-id", id);
     if (settingsFile) a.push("--settings", settingsFile);
     if (name) a.push("-n", name);
     if (model) a.push("--model", model);
@@ -54,14 +57,14 @@ export function launchArgs(harness, { id, settingsFile, prompt, resume, name, mo
     return a;
   }
   if (harness === "codex") {
-    const a = resume ? ["resume", resume] : [];
+    const a = resume ? [fork ? "fork" : "resume", resume] : [];
     if (model) a.push("-m", model);
     if (prompt) a.push(prompt);
     return a;
   }
   // grok
   const a = [];
-  if (resume) a.push("--resume", resume);
+  if (resume) { a.push("--resume", resume); if (fork) a.push("--fork-session"); }
   if (model) a.push("-m", model);
   if (prompt) a.push(prompt);
   return a;

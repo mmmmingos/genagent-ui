@@ -4,16 +4,13 @@ import { spawn } from "node:child_process";
 import { DATA, cleanEnv } from "./config.js";
 import { resolveBin } from "./harness.js";
 
-let running = 0;
-const queue = [];
-const MAX = 3;
+// Separate lanes, so slow side chats and plans never starve card generation.
+const LANES = { gen: { max: 2, running: 0, queue: [] }, agent: { max: 3, running: 0, queue: [] } };
+function slot(lane) { const L = LANES[lane]; return new Promise((res) => { if (L.running < L.max) { L.running++; res(); } else L.queue.push(res); }); }
+function release(lane) { const L = LANES[lane]; L.running--; const n = L.queue.shift(); if (n) { L.running++; n(); } }
 
-function slot() {
-  return new Promise((res) => { if (running < MAX) { running++; res(); } else queue.push(res); });
-}
-function release() { running--; const n = queue.shift(); if (n) { running++; n(); } }
-
-// opts: { prompt, stdin, model, schema, system, lean, tools, resume, fork, sessionId, cwd, addDirs, timeoutMs }
+// opts: { prompt, stdin, model, schema, system, appendSystem, lean, tools, resume, fork, sessionId, cwd,
+//         addDirs, userSettingsOnly, lane, onChild, timeoutMs }
 export async function claudeCall(opts) {
   const bin = resolveBin("claude");
   if (!bin) throw new Error("Claude Code isn't installed");
@@ -21,6 +18,9 @@ export async function claudeCall(opts) {
   if (opts.model) a.push("--model", opts.model);
   if (opts.schema) a.push("--json-schema", JSON.stringify(opts.schema));
   if (opts.lean) a.push("--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "", "--no-session-persistence");
+  // Planner and side chats may run in a folder the owner just picked: load only the owner's own
+  // settings and no MCP servers, never that folder's project settings, hooks or .mcp.json.
+  if (opts.userSettingsOnly && !opts.lean) a.push("--setting-sources", "user", "--strict-mcp-config");
   if (opts.system) a.push("--system-prompt", opts.system);
   if (opts.appendSystem) a.push("--append-system-prompt", opts.appendSystem);
   if (opts.tools !== undefined && !opts.lean) a.push("--tools", opts.tools);
@@ -28,19 +28,21 @@ export async function claudeCall(opts) {
   if (opts.fork) a.push("--fork-session");
   if (opts.sessionId) a.push("--session-id", opts.sessionId);
   for (const d of opts.addDirs || []) a.push("--add-dir", d);
-  if (opts.permissionMode) a.push("--permission-mode", opts.permissionMode);
-  a.push(opts.prompt);
-  await slot();
+  a.push(/^\s*-/.test(opts.prompt) ? " " + opts.prompt : opts.prompt);
+  const lane = opts.lane || "agent";
+  await slot(lane);
   try {
     return await new Promise((resolve, reject) => {
       const child = spawn(bin.file, [...bin.pre, ...a], { cwd: opts.cwd || DATA, env: cleanEnv(), windowsHide: true });
+      if (opts.onChild) opts.onChild(child);
       let out = "", err = "";
       child.stdout.on("data", (d) => (out += d));
       child.stderr.on("data", (d) => (err += d));
       const timer = setTimeout(() => { child.kill(); reject(new Error("Claude took too long to answer")); }, opts.timeoutMs || 240000);
       child.on("error", (e) => { clearTimeout(timer); reject(e); });
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
         clearTimeout(timer);
+        if (signal || child.cancelled) return reject(new Error("Cancelled"));
         let j = null;
         try { j = JSON.parse(out.trim().split("\n").pop()); } catch {}
         if (!j) return reject(new Error((err || out || `claude exited ${code}`).slice(0, 400)));
@@ -54,5 +56,5 @@ export async function claudeCall(opts) {
       });
       if (opts.stdin) child.stdin.end(opts.stdin); else child.stdin.end();
     });
-  } finally { release(); }
+  } finally { release(lane); }
 }

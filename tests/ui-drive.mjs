@@ -86,7 +86,7 @@ try {
   await ev(`document.querySelector('[data-act=side-compose]').click()`);
   check("composed answer", await waitFor(`!!document.getElementById('sp-composed') && document.getElementById('sp-composed').value.length > 20`, 180000));
   await sleep(300); await shot(`12-side-composed-${theme}`);
-  await ev(`document.querySelector('[data-act=side-send]').click()`);
+  await ev(`(document.querySelector('[data-act=side-use-composed]')||document.querySelector('[data-act=side-send]')).click()`);
   check("side chat closed after sending", await waitFor(`document.getElementById('panel').hidden`, 10000));
   // Send the remaining answered card from the chip, if any.
   if (await ev(`!!document.querySelector('[data-act=send-answers]:not([disabled])')`)) await ev(`document.querySelector('[data-act=send-answers]').click()`);

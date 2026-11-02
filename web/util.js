@@ -7,7 +7,7 @@ export const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 export function ago(t) {
   if (!t) return "";
   const s = Math.round((Date.now() - t) / 1000);
-  if (s < 45) return "just now";
+  if (s < 45) return "now";
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;
   if (s < 86400 * 7) return `${Math.round(s / 86400)}d ago`;

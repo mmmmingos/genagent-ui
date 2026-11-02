@@ -3,7 +3,7 @@
 // It forwards the event to the app. For a question (AskUserQuestion) or a permission request it
 // waits for the answer given in the app. If the app isn't reachable it does nothing, so Claude Code
 // falls back to its own prompt in the terminal.
-const port = process.env.GENUI_PORT, token = process.env.GENUI_TOKEN, sid = process.env.GENUI_SID;
+const port = process.env.GENUI_PORT, token = process.env.GENUI_HOOK_TOKEN, sid = process.env.GENUI_SID;
 let raw = "";
 process.stdin.on("data", (d) => (raw += d));
 process.stdin.on("end", async () => {

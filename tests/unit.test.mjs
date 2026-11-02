@@ -65,5 +65,5 @@ test("md renders code, lists and escapes HTML", () => {
 test("small formatters", () => {
   assert.equal(kt(1500), "1.5k");
   assert.equal(kt(250000), "250k");
-  assert.equal(ago(Date.now() - 5000), "just now");
+  assert.equal(ago(Date.now() - 5000), "now");
 });

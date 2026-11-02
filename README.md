@@ -41,3 +41,15 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 | `tests/` | `npm test` (unit) and `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) |
 
 App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-agent`.
+
+## How answering works
+
+- **Asked directly** cards are the agent's own multiple-choice questions (Claude Code's AskUserQuestion). Your pick goes straight to it after a 2-second undo window; typing in the composer while one is open answers it too.
+- **From the reply** cards are questions GenUI Agent read from the agent's last message. Answers are collected (each card shows "not sent yet") and go together as one message with **Send N answers**. Answers you haven't sent survive the agent's next turn.
+- **Discuss it** opens a side chat about that card. **Use as the answer** puts the composed answer into the card; nothing reaches the session until you send.
+- **New goal**: send to plan it into steps (a fresh worker per step, started when you say; steps marked "You" are yours to tick off), or **Start now** for one session in the harness shown.
+- When the window isn't in front, the title shows `(N) GenUI Agent` and Windows notifications appear for questions, approvals and finished turns.
+
+## Security
+
+The server listens on 127.0.0.1 only and answers only to its exact host and origin. The window gets a per-launch cookie (the install token is only exchanged for it); API calls from other local ports are refused. Each Claude Code session gets its own hook secret, and Codex/Grok sessions get no GenUI credentials at all. Text sent into a terminal is stripped of control characters. Planner and side-chat calls load only your user-level Claude settings and no MCP servers, never a project folder's own settings.

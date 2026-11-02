@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import pty from "@lydell/node-pty";
-import { DATA, PORT, TOKEN, ROOT, STORES, cleanEnv } from "./config.js";
+import { DATA, PORT, ROOT, STORES, cleanEnv, hookSecret, ID_RE } from "./config.js";
 import { resolveBin, launchArgs, HARNESSES } from "./harness.js";
 import { readSession } from "./transcripts.js";
 
@@ -39,17 +39,17 @@ export function loadRegistry() {
 
 const plain = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "").replace(/\x1b[()][0-9A-B]/g, "");
 
-export function list() {
-  return [...sessions.values()].map(summary);
-}
+export function list() { return [...sessions.values()].map(summary); }
 export function get(id) { return sessions.get(id); }
 
 export function summary(s) {
+  const ask = s.asks[0], perm = s.perms[0];
   return {
     id: s.id, harness: s.harness, label: HARNESSES[s.harness].label, cwd: s.cwd, name: s.name, status: s.status,
-    file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin,
-    pendingAsk: s.pendingAsk ? { id: s.pendingAsk.id, questions: s.pendingAsk.questions } : null,
-    pendingPermission: s.pendingPermission ? { id: s.pendingPermission.id, tool: s.pendingPermission.tool, input: s.pendingPermission.input } : null,
+    file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin, goalHint: s.goalHint,
+    pendingAsk: ask ? { id: ask.id, questions: ask.questions } : null,
+    pendingPermission: perm ? { id: perm.id, tool: perm.tool, input: perm.input } : null,
+    queued: Math.max(0, s.asks.length - 1) + Math.max(0, s.perms.length - 1),
     terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity,
   };
 }
@@ -60,19 +60,23 @@ function changed(s, what = "session") {
 }
 
 // Start a harness in a terminal. Returns the session.
-export function start({ harness, cwd, prompt, name, model, resume, origin = "app", goalHint }) {
+export function start({ harness, cwd, prompt, name, model, resume, fork, origin = "app", goalHint }) {
+  if (!HARNESSES[harness]) throw new Error("Unknown harness");
   const bin = resolveBin(HARNESSES[harness].bin);
   if (!bin) throw new Error(`${HARNESSES[harness].label} isn't installed`);
-  if (!cwd || !fs.existsSync(cwd)) throw new Error(`Folder not found: ${cwd}`);
-  const id = resume && harness === "claude" ? resume : crypto.randomUUID();
+  if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error(`Folder not found: ${cwd}`);
+  if (resume && !ID_RE.test(resume)) throw new Error("Bad session id");
+  if (model && !/^[\w.\[\]-]{1,60}$/.test(model)) throw new Error("Bad model name");
+  const id = resume && harness === "claude" && !fork ? resume : crypto.randomUUID();
   if (sessions.get(id)?.alive) throw new Error("That session is already running here");
-  const args = launchArgs(harness, { id, settingsFile: harness === "claude" ? SETTINGS : null, prompt, resume, name, model });
-  const env = cleanEnv({ GENUI_PORT: String(PORT), GENUI_TOKEN: TOKEN, GENUI_SID: id });
-  const p = pty.spawn(bin.file, [...bin.pre, ...args], { name: "xterm-256color", cols: 120, rows: 36, cwd, env, useConpty: true });
+  const args = launchArgs(harness, { id, settingsFile: harness === "claude" ? SETTINGS : null, prompt, resume, fork, name: name ? String(name).replace(/[\r\n]/g, " ").slice(0, 80) : "", model });
+  // Only Claude Code sessions get hook variables, and only their own per-session secret.
+  const extra = harness === "claude" ? { GENUI_PORT: String(PORT), GENUI_HOOK_TOKEN: hookSecret(id), GENUI_SID: id } : {};
+  const p = pty.spawn(bin.file, [...bin.pre, ...args], { name: "xterm-256color", cols: 120, rows: 36, cwd, env: cleanEnv(extra), useConpty: true });
   const s = {
     id, harness, cwd, name: name || "", model, origin, goalHint: goalHint || prompt || "", pty: p, alive: true, exitCode: null,
-    status: "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
-    file: null, pendingAsk: null, pendingPermission: null, terminalNeeds: null, resumeOf: resume || null,
+    status: prompt ? "working" : "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
+    file: null, asks: [], perms: [], terminalNeeds: null, hooked: false, resumeOf: resume || null,
   };
   sessions.set(id, s);
   p.onData((d) => {
@@ -85,72 +89,74 @@ export function start({ harness, cwd, prompt, name, model, resume, origin = "app
   });
   p.onExit(({ exitCode }) => {
     s.alive = false; s.exitCode = exitCode; s.status = "exited";
-    if (s.pendingAsk) { s.pendingAsk.respond({}); s.pendingAsk = null; }
-    if (s.pendingPermission) { s.pendingPermission.respond({}); s.pendingPermission = null; }
+    for (const a of s.asks) a.respond({}); for (const q of s.perms) q.respond({});
+    s.asks = []; s.perms = []; s.terminalNeeds = null;
+    clearInterval(s.watcher); clearTimeout(s.quietTimer); clearTimeout(s.intTimer);
     changed(s);
   });
+  if (!prompt && harness !== "claude") setTimeout(() => { if (s.status === "starting") { s.status = "idle"; changed(s); } }, 4000);
   findTranscript(s);
   persist();
   changed(s, "started");
   return s;
 }
 
-// Prompts that live only in the terminal (folder trust, login, update notices) become a card.
+// Prompts that live only in the terminal (folder trust, yes/no) become a card. Claude Code reports
+// everything else through hooks, so its screen is only read until the first hook arrives, and only
+// the last few lines count, so an agent printing "(y/n)" in its reply doesn't trigger a card.
 function sniffScreen(s) {
-  const tail = s.screen.slice(-1600);
-  let needs = null;
-  if (/trust this folder|Do you trust the (files|contents)|Is this a project you created or one you trust/i.test(tail)) needs = { kind: "trust", text: "The harness wants to know if you trust this folder before it starts." };
-  else if (/Allow Codex to|approve this command|Would you like to run the following command/i.test(tail) && s.harness !== "claude") needs = { kind: "approve", text: "The agent is asking for approval in its terminal." };
-  else if (/\(y\/n\)|\[y\/N\]|\[Y\/n\]/.test(tail.slice(-200))) needs = { kind: "yesno", text: "The terminal is waiting for a yes or no." };
-  if (JSON.stringify(needs) !== JSON.stringify(s.terminalNeeds)) {
-    s.terminalNeeds = needs;
-    if (needs) s.status = "needs";
-    changed(s);
-  }
-  // Codex and Grok have no hooks here: treat output going quiet as the end of a turn.
-  if (s.harness !== "claude") {
-    clearTimeout(s.quietTimer);
-    if (s.status !== "working" && s.status !== "starting" && !needs) { s.status = "working"; changed(s); }
-    s.quietTimer = setTimeout(() => { if (s.alive && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); } }, 4000);
-  }
+  if (s.harness === "claude" && s.hooked) return;
+  clearTimeout(s.sniffTimer);
+  s.sniffTimer = setTimeout(() => {
+    const tail = s.screen.slice(-700);
+    let needs = null;
+    if (/trust this folder|Do you trust the (files|contents)|Is this a project you created or one you trust/i.test(tail)) needs = { kind: "trust", text: "The harness wants to know if you trust this folder before it starts." };
+    else if (s.harness !== "claude" && /(Allow Codex to|approve this command|Would you like to run the following command)/i.test(tail.slice(-400))) needs = { kind: "approve", text: "The agent is asking for approval in its terminal." };
+    else if (/(\(y\/n\)|\[y\/N\]|\[Y\/n\])\s*$/.test(tail.trimEnd())) needs = { kind: "yesno", text: "The terminal is waiting for a yes or no." };
+    if (JSON.stringify(needs) !== JSON.stringify(s.terminalNeeds)) { s.terminalNeeds = needs; if (needs) s.status = "needs"; changed(s); }
+  }, 250);
 }
 
-// Where each harness writes this session's transcript.
+// Where each harness writes this session's transcript. Files another live session already uses are skipped.
 function findTranscript(s) {
+  const claimed = () => new Set([...sessions.values()].filter((o) => o !== s && o.file).map((o) => o.file));
   const tryFind = () => {
-    if (!s.alive && s.file) return;
+    if (s.file) return;
     let f = null;
     if (s.harness === "claude") {
       const enc = s.cwd.replace(/[^A-Za-z0-9]/g, "-");
       const direct = path.join(STORES.claude, enc, `${s.id}.jsonl`);
       if (fs.existsSync(direct)) f = direct;
-      else {
-        try { for (const d of fs.readdirSync(STORES.claude)) { const p = path.join(STORES.claude, d, `${s.id}.jsonl`); if (fs.existsSync(p)) { f = p; break; } } } catch {}
-      }
     } else if (s.harness === "codex") {
-      f = newestMatching(STORES.codex, 4, (n) => n.startsWith("rollout-") && n.endsWith(".jsonl"), s.startedAt - 5000, (file) => {
-        try { const first = fs.readFileSync(file, "utf8").split("\n")[0]; const m = JSON.parse(first); return path.resolve(m.payload.cwd || "") === path.resolve(s.cwd); } catch { return false; }
+      f = newestMatching(STORES.codex, 4, (n) => n.startsWith("rollout-") && n.endsWith(".jsonl"), s.startedAt, claimed(), (file) => {
+        // The first line (session_meta) can be huge (it embeds instructions), so read the cwd field from its start.
+        try {
+          const fd = fs.openSync(file, "r"), buf = Buffer.alloc(8192); const n = fs.readSync(fd, buf, 0, buf.length, 0); fs.closeSync(fd);
+          const m = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(buf.toString("utf8", 0, n));
+          return !!m && path.resolve(JSON.parse(`"${m[1]}"`)) === path.resolve(s.cwd);
+        } catch { return false; }
       });
     } else {
-      const encDir = path.join(STORES.grok, encodeURIComponent(s.cwd));
-      f = newestMatching(encDir, 1, (n) => n === "chat_history.jsonl", s.startedAt - 5000, () => true);
+      f = newestMatching(path.join(STORES.grok, encodeURIComponent(s.cwd)), 1, (n) => n === "chat_history.jsonl", s.startedAt, claimed(), () => true);
     }
     if (f) { s.file = f; persist(); watch(s); changed(s); return; }
-    if (Date.now() - s.startedAt < 10 * 60 * 1000) setTimeout(tryFind, 1500);
+    if (s.alive && Date.now() - s.startedAt < 10 * 60 * 1000) setTimeout(tryFind, 1500);
   };
   setTimeout(tryFind, 800);
 }
 
-function newestMatching(dir, depth, nameOk, sinceMs, extraOk) {
+function newestMatching(dir, depth, nameOk, sinceMs, claimed, extraOk) {
   let best = null;
   const walk = (d, left) => {
     let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(d, e.name);
       if (e.isDirectory() && left > 0) walk(p, left - 1);
-      else if (e.isFile() && nameOk(e.name)) {
+      else if (e.isFile() && nameOk(e.name) && !claimed.has(p)) {
         const st = fs.statSync(p);
-        if (st.mtimeMs >= sinceMs && (!best || st.mtimeMs > best.m) && extraOk(p)) best = { p, m: st.mtimeMs };
+        // Created after this session started (birth time), so an older session's file never matches.
+        const born = st.birthtimeMs || st.ctimeMs;
+        if (born >= sinceMs - 1500 && (!best || born > best.m) && extraOk(p)) best = { p, m: born };
       }
     }
   };
@@ -159,15 +165,24 @@ function newestMatching(dir, depth, nameOk, sinceMs, extraOk) {
 }
 
 function watch(s) {
+  clearInterval(s.watcher);
   let lastSize = -1;
   const tick = () => {
     try {
       const st = fs.statSync(s.file);
       if (st.size !== lastSize) {
+        const grew = lastSize >= 0;
         lastSize = st.size;
         const parsed = readSession(s.harness, s.file);
         s.context = parsed.context;
         bus.emit("transcript", s.id, parsed);
+        // Codex and Grok have no hooks here: the transcript growing is the agent working, and it
+        // going quiet is the end of a turn (terminal repaints and resizes don't count).
+        if (s.harness !== "claude" && grew && s.alive) {
+          if (s.status !== "working") { s.status = "working"; s.terminalNeeds = null; changed(s); }
+          clearTimeout(s.quietTimer);
+          s.quietTimer = setTimeout(() => { if (s.alive && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); } }, 6000);
+        }
       }
     } catch {}
   };
@@ -177,16 +192,34 @@ function watch(s) {
 
 // ---- Input -----------------------------------------------------------------
 export function write(id, data) { const s = sessions.get(id); if (s?.alive) s.pty.write(data); }
-export function resize(id, cols, rows) { const s = sessions.get(id); if (s?.alive) try { s.pty.resize(Math.max(20, cols), Math.max(5, rows)); } catch {} }
+export function resize(id, cols, rows) { const s = sessions.get(id); if (s?.alive && cols > 0 && rows > 0) try { s.pty.resize(Math.max(20, Math.min(cols, 500)), Math.max(5, Math.min(rows, 300))); } catch {} }
 
-// Send a message as if typed: paste it as one block, then press Enter.
+// Send a message as if typed: paste it as one block, then press Enter. Control characters are
+// stripped so pasted text can't end the paste early and inject keystrokes.
 export function send(id, text) {
   const s = sessions.get(id);
   if (!s?.alive) throw new Error("This session isn't running");
-  const body = text.replace(/\r\n/g, "\n");
+  const body = String(text).replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+  if (!body.trim()) throw new Error("Nothing to send");
   s.pty.write(`\x1b[200~${body}\x1b[201~`);
   setTimeout(() => s.pty.write("\r"), 120);
-  s.status = "working"; changed(s);
+  s.status = "working"; s.terminalNeeds = null; changed(s);
+}
+
+// Interrupt (Esc for Claude Code, Ctrl+C in the terminal). Claude Code runs no Stop hook when
+// interrupted, so a quiet terminal shortly after counts as the turn ending.
+export function interrupt(id, key) {
+  const s = sessions.get(id);
+  if (!s?.alive) return;
+  s.pty.write(key);
+  const at = Date.now();
+  clearTimeout(s.intTimer);
+  const check = () => {
+    if (!s.alive || s.status !== "working") return;
+    if (Date.now() - s.lastOutput > 1500) { s.status = "idle"; changed(s, "turn-end"); }
+    else if (Date.now() - at < 15000) s.intTimer = setTimeout(check, 700);
+  };
+  s.intTimer = setTimeout(check, 1600);
 }
 
 export function stop(id) {
@@ -195,66 +228,84 @@ export function stop(id) {
   try { s.pty.kill(); } catch {}
   clearInterval(s.watcher);
 }
-
 export function stopAll() { for (const id of sessions.keys()) stop(id); }
 
 // ---- Hooks from Claude Code ------------------------------------------------------
-// Called with each hook event; `respond` answers a waiting hook (AskUserQuestion / PermissionRequest).
+// Called with each hook event. Returns the question id when the hook waits for an answer.
 export function onHook(id, ev, respond, wantsAnswer) {
   const s = sessions.get(id);
-  if (!s) { respond({}); return; }
+  if (!s) { respond({}); return null; }
   const name = ev.hook_event_name;
-  if (ev.transcript_path && !s.file) { s.file = ev.transcript_path; persist(); watch(s); }
-  if (name === "SessionStart") { s.status = "idle"; }
+  s.hooked = true;
+  if (ev.transcript_path && !s.file && fs.existsSync(path.dirname(ev.transcript_path))) { s.file = ev.transcript_path; persist(); watch(s); }
+  if (name === "SessionStart") { if (s.status === "starting") s.status = "idle"; s.terminalNeeds = null; }
   if (name === "UserPromptSubmit") { s.status = "working"; s.terminalNeeds = null; }
-  if (name === "Stop") { s.status = "idle"; changed(s, "turn-end"); respond({}); return; }
+  if (name === "Stop") { s.status = "idle"; s.terminalNeeds = null; changed(s, "turn-end"); respond({}); return null; }
   if (name === "Notification") {
-    if (/permission/i.test(ev.notification_type || ev.message || "")) s.status = "needs";
-    else if (/idle|input/i.test(ev.notification_type || "")) s.status = s.pendingAsk ? "needs" : "idle";
+    const t = ev.notification_type || ev.message || "";
+    if (/permission/i.test(t) && !s.perms.length) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text: "Claude Code is asking for permission in its terminal." }; }
+    else if (/idle_prompt/i.test(t) && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); respond({}); return null; }
   }
   if (name === "PreToolUse" && ev.tool_name === "AskUserQuestion" && wantsAnswer) {
     const qid = crypto.randomUUID();
-    s.pendingAsk = { id: qid, questions: (ev.tool_input && ev.tool_input.questions) || [], input: ev.tool_input, respond };
+    s.asks.push({ id: qid, questions: (ev.tool_input && ev.tool_input.questions) || [], input: ev.tool_input, respond });
     s.status = "needs";
     changed(s, "ask");
-    return; // answered later through answerAsk()
+    return qid;
   }
   if (name === "PermissionRequest" && wantsAnswer) {
     const qid = crypto.randomUUID();
-    s.pendingPermission = { id: qid, tool: ev.tool_name, input: ev.tool_input, respond };
+    s.perms.push({ id: qid, tool: ev.tool_name, input: ev.tool_input, respond });
     s.status = "needs";
     changed(s, "permission");
-    return;
+    return qid;
   }
+  if (name === "PreToolUse" || name === "UserPromptSubmit") { if (s.status !== "working") s.status = "working"; }
   changed(s);
   respond({});
+  return null;
 }
+
+// The waiting hook went away (timed out, or Esc in the terminal): drop its card; the terminal has the prompt now.
+export function hookGone(id, qid) {
+  const s = sessions.get(id); if (!s) return;
+  const before = s.asks.length + s.perms.length;
+  s.asks = s.asks.filter((a) => a.id !== qid); s.perms = s.perms.filter((p) => p.id !== qid);
+  if (s.asks.length + s.perms.length === before) return;
+  if (s.alive) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text: "The question moved to the terminal." }; }
+  changed(s);
+}
+
+function toTerminal(s, text) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text }; }
 
 // Answer a multiple-choice question: Claude Code receives the answers as if picked in its menu.
 export function answerAsk(id, qid, answers) {
   const s = sessions.get(id);
-  if (!s?.pendingAsk || s.pendingAsk.id !== qid) throw new Error("That question is no longer open");
-  const pa = s.pendingAsk; s.pendingAsk = null;
-  if (answers === null) pa.respond({}); // answer it in the terminal instead
-  else pa.respond({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: { ...pa.input, answers } } });
-  s.status = "working"; changed(s);
+  const i = s ? s.asks.findIndex((a) => a.id === qid) : -1;
+  if (i < 0) throw new Error("That question is no longer open");
+  const [pa] = s.asks.splice(i, 1);
+  if (answers === null) { pa.respond({}); toTerminal(s, "Answer the question in the terminal."); }
+  else { pa.respond({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: { ...pa.input, answers } } }); s.status = s.asks.length || s.perms.length ? "needs" : "working"; }
+  changed(s);
 }
 
 export function answerPermission(id, qid, allow, message) {
   const s = sessions.get(id);
-  if (!s?.pendingPermission || s.pendingPermission.id !== qid) throw new Error("That request is no longer open");
-  const pp = s.pendingPermission; s.pendingPermission = null;
-  if (allow === null) pp.respond({});
-  else pp.respond({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: allow ? { behavior: "allow" } : { behavior: "deny", message: message || "The user declined this in GenUI Agent." } } });
-  s.status = "working"; changed(s);
+  const i = s ? s.perms.findIndex((p) => p.id === qid) : -1;
+  if (i < 0) throw new Error("That request is no longer open");
+  const [pp] = s.perms.splice(i, 1);
+  if (allow === null) { pp.respond({}); toTerminal(s, "Decide in the terminal."); }
+  else { pp.respond({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: allow ? { behavior: "allow" } : { behavior: "deny", message: message || "The user declined this in GenUI Agent." } } }); s.status = s.asks.length || s.perms.length ? "needs" : "working"; }
+  changed(s);
 }
 
 // Folder-trust and similar terminal prompts: the safe default needs a keypress the user chooses.
 export function answerTerminal(id, choice) {
   const s = sessions.get(id);
   if (!s?.alive || !s.terminalNeeds) return;
-  if (s.terminalNeeds.kind === "trust") s.pty.write(choice === "yes" ? (s.harness === "claude" ? "\x1b[B\r" : "\r") : "\x1b");
-  else if (s.terminalNeeds.kind === "yesno") s.pty.write(choice === "yes" ? "y\r" : "n\r");
-  else s.pty.write(choice === "yes" ? "\r" : "\x1b");
+  const k = s.terminalNeeds.kind;
+  if (k === "trust") s.pty.write(choice === "yes" ? (s.harness === "claude" ? "\x1b[B\r" : "\r") : "\x1b");
+  else if (k === "yesno") s.pty.write(choice === "yes" ? "y\r" : "n\r");
+  else if (k === "approve") s.pty.write(choice === "yes" ? "\r" : "\x1b");
   s.terminalNeeds = null; s.status = "working"; s.screen = ""; changed(s);
 }

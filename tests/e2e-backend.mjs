@@ -31,7 +31,11 @@ try {
   check("state lists harnesses " + JSON.stringify(st.harnesses), st.harnesses.claude);
   check(`saved sessions listed (${st.saved.length})`, st.saved.length > 0);
 
-  ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers: { cookie: `genui=${TOKEN}`, origin: `http://127.0.0.1:${PORT}` } });
+  // The window's cookie is minted per launch: exchange the install token for it like the launcher does.
+  const login = await fetch(`http://127.0.0.1:${PORT}/?t=${TOKEN}`, { redirect: "manual" });
+  const cookie = (login.headers.get("set-cookie") || "").split(";")[0];
+  check("window cookie issued", /^genui=[a-f0-9]{48}$/.test(cookie));
+  ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers: { cookie, origin: `http://127.0.0.1:${PORT}` } });
   const events = [];
   ws.on("message", (m) => { const j = JSON.parse(m); if (j.type !== "pty" && j.type !== "replay") events.push(j); });
   await new Promise((r) => ws.on("open", r));
@@ -80,7 +84,8 @@ try {
   check("generated goal/flow pushed: " + (gen ? gen.gen.title : "none"), !!gen);
 
   // Side discussion: fork, one message, compose.
-  const sd = await api("/api/side", { harness: "claude", file: cur.file, mainId: s.id, cwd: SANDBOX, topic: "Which colour should I pick?" });
+  let sd = await api("/api/side", { harness: "claude", file: cur.file, mainId: s.id, cwd: SANDBOX, topic: "Which colour should I pick?" });
+  for (let i = 0; i < 180 && (sd.busy || !sd.msgs.length); i++) { await sleep(1000); sd = await api(`/api/side/${sd.id}`); }
   check("side discussion opened with an opener", sd.msgs.length === 1 && sd.msgs[0].text.length > 20);
   const sd2 = await api(`/api/side/${sd.id}/msg`, { text: "I think blue is calmer. Is that a good reason?" });
   check("side reply", sd2.msgs.length === 3);
@@ -88,6 +93,13 @@ try {
   check("composed answer: " + sd3.composed.slice(0, 80).replace(/\n/g, " "), sd3.composed.length > 10);
   const before = fs.readFileSync(cur.file, "utf8");
   check("main transcript untouched by side discussion", !/calmer/.test(before));
+  // Security: wrong Host, foreign Origin, cookie-only from another port, form posts, bad ids, and the master token on /hook.
+  const raw = async (opts) => { const r = await fetch(`http://127.0.0.1:${PORT}${opts.path}`, { method: opts.method || "GET", headers: opts.headers || {}, body: opts.body, redirect: "manual" }); return r.status; };
+  check("wrong Host header refused", (await new Promise((res) => { import("node:http").then((h) => { const rq = h.request({ host: "127.0.0.1", port: PORT, path: "/api/state", headers: { host: "evil.example:4399", "x-genui-token": TOKEN } }, (r) => { r.resume(); res(r.statusCode); }); rq.on("error", () => {}); rq.end(); }); })) === 421);
+  check("cookie from another port's page refused", (await raw({ path: "/api/state", headers: { cookie, "sec-fetch-site": "same-site", origin: "http://127.0.0.1:5555" } })) === 403);
+  check("form-encoded POST refused", (await raw({ path: "/api/sessions", method: "POST", headers: { "x-genui-token": TOKEN, "content-type": "application/x-www-form-urlencoded" }, body: "harness=claude" })) === 415);
+  check("bad session id refused", (await raw({ path: "/api/sessions/..%2f..%2fx/stop", method: "POST", headers: { "x-genui-token": TOKEN, "content-type": "application/json" }, body: "{}" })) === 400);
+  check("master token not accepted on /hook", (await raw({ path: `/hook/${s.id}`, method: "POST", headers: { "x-genui-token": TOKEN, "content-type": "application/json" }, body: "{}" })) === 403);
   await api(`/api/sessions/${s.id}/stop`, {});
 } catch (e) {
   console.log("FAIL exception " + e.message);

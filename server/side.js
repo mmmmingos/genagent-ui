@@ -5,13 +5,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { DATA, MODELS } from "./config.js";
 import { readSession, digest } from "./transcripts.js";
 import { claudeCall } from "./claude-call.js";
 
+export const bus = new EventEmitter();
 const DIR = path.join(DATA, "side");
 fs.mkdirSync(DIR, { recursive: true });
 const sides = new Map();
+const children = new Map(); // side id -> running claude process
 
 const READ_ONLY_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch";
 const RULES = `You are in a SIDE DISCUSSION opened from GenUI Agent. The user wants to think something through with you before answering the main agent. Your job is to advise, not act:
@@ -20,57 +23,88 @@ const RULES = `You are in a SIDE DISCUSSION opened from GenUI Agent. The user wa
 - Help the user reach a clear decision. Point out trade-offs and what the main agent will need to know.
 - Nothing you say reaches the main agent until the user presses Compose and Send.`;
 
-function save(s) { fs.writeFileSync(path.join(DIR, s.id + ".json"), JSON.stringify({ ...s, busy: undefined })); }
+const pub = (s) => ({ ...s, busy: !!s.busy });
+function save(s) { const { ...rest } = s; fs.writeFileSync(path.join(DIR, s.id + ".json"), JSON.stringify(rest)); bus.emit("side", pub(s)); }
 export function get(id) {
-  if (sides.has(id)) return sides.get(id);
-  try { const s = JSON.parse(fs.readFileSync(path.join(DIR, id + ".json"), "utf8")); sides.set(id, s); return s; } catch { return null; }
+  if (sides.has(id)) return pub(sides.get(id));
+  try { const s = JSON.parse(fs.readFileSync(path.join(DIR, id + ".json"), "utf8")); s.busy = false; sides.set(id, s); return pub(s); } catch { return null; }
+}
+const raw = (id) => (get(id) ? sides.get(id) : null);
+
+// Fork sessions are bookkeeping, not work: the sidebar hides them.
+let forkCache = { at: 0, ids: new Set() };
+export function forkIds() {
+  if (Date.now() - forkCache.at < 10000) return forkCache.ids;
+  const ids = new Set();
+  try { for (const f of fs.readdirSync(DIR)) { try { const s = JSON.parse(fs.readFileSync(path.join(DIR, f), "utf8")); (s.forkIds || [s.forkId]).forEach((x) => x && ids.add(x)); } catch {} } } catch {}
+  forkCache = { at: Date.now(), ids };
+  return ids;
 }
 
-// Open a side discussion about a session (and optionally one card on it).
-export async function open({ harness, file, mainId, cwd, topic }) {
+const opts = (s, extra) => ({ model: MODELS.side, tools: READ_ONLY_TOOLS, userSettingsOnly: true, cwd: s.cwd && fs.existsSync(s.cwd) ? s.cwd : DATA, timeoutMs: 300000, onChild: (c) => children.set(s.id, c), ...extra });
+function track(s, r) { s.forkId = r.sessionId || s.forkId; s.forkIds = [...new Set([...(s.forkIds || []), s.forkId])]; s.contextTokens = r.contextTokens; s.cost += r.cost; forkCache.at = 0; }
+
+// Open a side discussion. Returns at once; the opener arrives later through the bus.
+export function open({ harness, file, mainId, cwd, topic }) {
   const id = crypto.randomUUID();
-  const s = { id, harness, file, mainId, cwd, topic: topic || "", msgs: [], forkId: null, contextTokens: 0, cost: 0, composed: "", createdAt: Date.now() };
+  const s = { id, harness, file, mainId, cwd, topic: topic || "", msgs: [], forkId: null, forkIds: [], contextTokens: 0, cost: 0, composed: "", createdAt: Date.now(), busy: true, err: "" };
   sides.set(id, s);
   const opener = `${RULES}\n\nThe user opened this side discussion${topic ? ` about: "${topic}"` : ""}.\nStart by summarising, in 2-4 sentences, what the main agent needs from the user here and the key consideration, then ask what is on their mind.`;
-  let r;
-  if (harness === "claude" && mainId) {
-    r = await claudeCall({ model: MODELS.side, resume: mainId, fork: true, tools: READ_ONLY_TOOLS, cwd: cwd || DATA, prompt: opener, timeoutMs: 300000 });
-  } else {
-    const parsed = readSession(harness, file);
-    const ctx = `The main session is a ${harness} session in ${parsed.cwd || cwd || "an unknown folder"}. Its full transcript is at ${file} (you may Read it). Digest:\n\n${digest(parsed, 40000)}`;
-    r = await claudeCall({ model: MODELS.side, tools: READ_ONLY_TOOLS, cwd: parsed.cwd && fs.existsSync(parsed.cwd) ? parsed.cwd : DATA, addDirs: [path.dirname(file)], prompt: `${opener}\n\n${ctx}`, timeoutMs: 300000 });
-  }
-  s.forkId = r.sessionId; s.contextTokens = r.contextTokens; s.cost += r.cost;
-  s.msgs.push({ who: "ai", text: r.result });
+  (async () => {
+    try {
+      let r;
+      if (harness === "claude" && mainId) r = await claudeCall(opts(s, { resume: mainId, fork: true, prompt: opener }));
+      else {
+        const parsed = readSession(harness, file);
+        const ctx = `The main session is a ${harness} session in ${parsed.cwd || cwd || "an unknown folder"}. Its full transcript is at ${file} (you may Read it). Digest:\n\n${digest(parsed, 40000)}`;
+        r = await claudeCall(opts(s, { addDirs: [path.dirname(file)], prompt: `${opener}\n\n${ctx}` }));
+      }
+      track(s, r);
+      s.msgs.push({ who: "ai", text: r.result });
+    } catch (e) { s.err = e.message === "Cancelled" ? "" : e.message; }
+    s.busy = false; children.delete(id); save(s);
+  })();
   save(s);
-  return s;
+  return pub(s);
 }
 
 export async function message(id, text) {
-  const s = get(id);
+  const s = raw(id);
   if (!s) throw new Error("Side discussion not found");
+  if (s.busy) throw new Error("Still thinking about the last message");
+  s.busy = true; s.err = "";
   s.msgs.push({ who: "me", text });
-  const r = await claudeCall({ model: MODELS.side, resume: s.forkId, tools: READ_ONLY_TOOLS, cwd: s.cwd && fs.existsSync(s.cwd) ? s.cwd : DATA, prompt: text, timeoutMs: 300000 });
-  s.forkId = r.sessionId || s.forkId; s.contextTokens = r.contextTokens; s.cost += r.cost;
-  s.msgs.push({ who: "ai", text: r.result });
-  save(s);
-  return s;
+  try {
+    const r = await claudeCall(opts(s, { resume: s.forkId, prompt: text }));
+    track(s, r);
+    s.msgs.push({ who: "ai", text: r.result });
+  } catch (e) { s.msgs.pop(); s.err = e.message; throw e; }
+  finally { s.busy = false; children.delete(id); save(s); }
+  return pub(s);
 }
 
 // Write the single answer that goes back to the main agent.
 export async function compose(id) {
-  const s = get(id);
+  const s = raw(id);
   if (!s) throw new Error("Side discussion not found");
-  const r = await claudeCall({ model: MODELS.side, resume: s.forkId, tools: READ_ONLY_TOOLS, cwd: s.cwd && fs.existsSync(s.cwd) ? s.cwd : DATA, timeoutMs: 300000,
-    prompt: `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion. Output only the message text, no preamble.` });
-  s.forkId = r.sessionId || s.forkId; s.contextTokens = r.contextTokens; s.cost += r.cost;
-  s.composed = String(r.result || "").trim();
-  save(s);
-  return s;
+  if (s.busy) throw new Error("Still thinking");
+  s.busy = true;
+  try {
+    const r = await claudeCall(opts(s, { resume: s.forkId,
+      prompt: `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion. Output only the message text, no preamble.` }));
+    track(s, r);
+    s.composed = String(r.result || "").trim();
+  } finally { s.busy = false; children.delete(id); save(s); }
+  return pub(s);
+}
+
+export function cancel(id) {
+  const c = children.get(id);
+  if (c) { c.cancelled = true; try { c.kill(); } catch {} children.delete(id); }
 }
 
 export function markSent(id, text) {
-  const s = get(id);
+  const s = raw(id);
   if (s) { s.sentText = text; s.sentAt = Date.now(); save(s); }
-  return s;
+  return s ? pub(s) : null;
 }

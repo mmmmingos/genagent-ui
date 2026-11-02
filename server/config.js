@@ -38,3 +38,13 @@ export function cleanEnv(extra = {}) {
   for (const k of Object.keys(env)) if (/^CLAUDE(CODE)?_|^CLAUDECODE$|^CLAUDE_PID$/i.test(k)) delete env[k];
   return { ...env, FORCE_COLOR: "1", ...extra };
 }
+
+// Each Claude Code session started by the app gets its own hook secret, derived from the install
+// token, so a process inside one session can't call the app's API or answer for another session.
+export const hookSecret = (sid) => crypto.createHmac("sha256", TOKEN).update("hook:" + sid).digest("hex");
+export function safeEqual(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+// Session, side-chat and harness ids: UUIDs and similar. Nothing else reaches paths, args or markup.
+export const ID_RE = /^[A-Za-z0-9][A-Za-z0-9-]{7,63}$/;

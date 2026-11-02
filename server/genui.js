@@ -71,16 +71,16 @@ export function cached(file) {
   return null;
 }
 
-export async function generate(harness, file) {
+export async function generate(harness, file, { force = false } = {}) {
   const st = fs.statSync(file);
   const key = cacheKey(file, st.size);
   const p = path.join(CACHE, key + ".json");
-  if (fs.existsSync(p)) return { ...JSON.parse(fs.readFileSync(p, "utf8")), fresh: true };
+  if (!force && fs.existsSync(p)) return { ...JSON.parse(fs.readFileSync(p, "utf8")), fresh: true };
   if (running.has(key)) return running.get(key);
   const job = (async () => {
     const parsed = readSession(harness, file);
     const text = digest(parsed);
-    const r = await claudeCall({ model: MODELS.generate, lean: true, schema: SCHEMA, system: SYSTEM, stdin: text,
+    const r = await claudeCall({ lane: "gen", model: MODELS.generate, lean: true, schema: SCHEMA, system: SYSTEM, stdin: text,
       prompt: "The session transcript digest is on stdin. Produce the UI data.", timeoutMs: 180000 });
     if (!r.data) throw new Error("The generator returned no data");
     const out = { ...r.data, at: Date.now(), cost: r.cost, size: st.size };
