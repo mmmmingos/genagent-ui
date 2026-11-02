@@ -7,7 +7,9 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "setup": "node scripts/install.mjs",
+    "test:e2e": "node tests/e2e-backend.mjs"
   },
   "engines": {
     "node": ">=22"

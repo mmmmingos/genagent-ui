@@ -119,9 +119,10 @@ export function parseGrok(lines, dir) {
   const events = [];
   for (const l of lines) {
     if (l.type === "user" && !l.synthetic_reason) {
-      const text = Array.isArray(l.content) ? l.content.map((b) => b.text || "").join("\n") : String(l.content || "");
+      const raw = Array.isArray(l.content) ? l.content.map((b) => b.text || "").join("\n") : String(l.content || "");
+      const text = raw.replace(/^\s*<user_query>\s*|\s*<\/user_query>\s*$/g, "");
       if (isNoise(text)) continue;
-      events.push({ role: "user", text: text.replace(/^<user_query>\s*|\s*<\/user_query>$/g, ""), t: null });
+      events.push({ role: "user", text, t: null });
     }
     if (l.type === "assistant") {
       let text = typeof l.content === "string" ? l.content : Array.isArray(l.content) ? l.content.map((b) => b.text || "").join("\n") : "";
