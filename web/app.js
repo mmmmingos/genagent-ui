@@ -570,14 +570,14 @@ function overviewHTML() {
   const order = { needs: 0, run: 1, idle: 2, done: 3, off: 4 };
   live.sort((a, b) => order[liveState(a)] - order[liveState(b)] || (b.lastActivity || 0) - (a.lastActivity || 0));
   const count = (st) => live.filter((l) => liveState(l) === st).length;
-  const hflow = (steps, cur) => `<div class="hflow">${(steps || []).slice(-24).map((s) => `<span class="hn ${s.state === "current" ? `current ${cur}` : s.state}" title="${esc(s.label)}"><span class="rn"></span></span>`).join("")}</div>`;
+  const hflow = (steps, cur) => `<div class="hflow">${(steps || []).slice(-10).map((s) => `<span class="hn ${s.state === "current" ? `current ${cur}` : s.state}" title="${esc(s.label)}"><span class="rn"></span><span class="hl">${esc(s.label)}</span></span>`).join("")}</div>`;
   const row = (l) => {
     const st = liveState(l), g = genFor(l.file);
     const cur = g && (g.steps || []).find((s) => s.state === "current");
     const nowText = st === "needs" ? (l.pendingAsk ? "Asked you a question" : l.pendingPermission ? "Needs your approval" : l.terminalNeeds ? "Waiting in its terminal" : "Has questions for you") : st === "run" ? (cur ? `Working on: ${cur.label}` : "Working") : st === "off" ? "Ended" : st === "idle" ? "Your turn" : (g && g.now) || "";
     return `<button class="ovrow" id="ov-${esc(l.id)}" data-act="open-live" data-id="${esc(l.id)}">
       <span class="ovt"><b>${esc(title(l))}</b><small>${esc(shortPath(l.cwd))} · ${esc(S.labels[l.harness])}</small></span>
-      ${g ? hflow(g.steps, st === "needs" ? "needs" : st === "run" ? "run" : st === "done" ? "done" : "idle") : `<div class="hflow"><span class="hn current run"><span class="rn"></span></span><span class="hn next"><span class="rn"></span></span><span class="hn next"><span class="rn"></span></span></div>`}
+      ${g ? hflow(g.steps, st === "needs" ? "needs" : st === "run" ? "run" : st === "done" ? "done" : "idle") : `<div class="hflow"><span class="hn current run"><span class="rn"></span><span class="hl">Starting</span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span></div>`}
       <span class="ovnow ${st === "needs" ? "needs" : ""}"><span class="${st === "run" ? "shimmer t2" : ""}">${esc(nowText)}</span></span>
       <span class="ovm">${g && cur ? `${g.steps.indexOf(cur) + 1}/${g.steps.length}` : esc(nowAgo(l.lastActivity || l.createdAt))}</span></button>`;
   };

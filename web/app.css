@@ -480,3 +480,15 @@ button.pill:hover { background: var(--bg-hover); color: var(--text-1); }
 pre.diff .del { color: var(--red-ink); display: block; }
 pre.diff .add { color: var(--green-ink); display: block; }
 .btn-neutral.sm, .btn-tint.sm { height: 28px; }
+
+/* Orchestrator flows: stretched across the row, every step labelled (the owner reads flows, not dots). */
+.ovrow { grid-template-columns: 220px minmax(0, 1fr) 200px 88px; min-height: 68px; padding-top: 8px; padding-bottom: 8px; }
+.hflow { height: auto; align-items: flex-start; }
+.hn { flex: 1 1 0; min-width: 0; width: auto; height: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hn::before { top: 11px; margin-top: 0; left: calc(-50% + 6px); right: calc(50% + 6px); }
+.hn .rn { margin-top: 7px; }
+.hn.current.needs .rn, .hn.current.done .rn { margin-top: 4px; margin-bottom: -3px; }
+.hn .hl { font-size: 11.5px; line-height: 15px; color: var(--text-3); text-align: center; max-width: 100%; padding: 0 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+.hn.done .hl { color: var(--text-2); }
+.hn.current .hl { color: var(--text-1); font-weight: 500; }
+.hn.current.needs .hl { color: var(--amber-ink); }
