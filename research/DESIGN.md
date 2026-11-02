@@ -15,6 +15,12 @@ All sizes are CSS px at 100 % browser zoom. All colours are sRGB hex, light them
 - The column is 1380 native px, so it is **690 px**.
 - The card action button is about 68 native px, so it is **34 px**. The status chip is 63 native px, so it is **32 px**.
 - The card border is about 2 native px with a peak of `#e6e6e6`–`#ededed`, so it is **1 px at about 7 % black**. The straight edge resumes about 32 native px from the corner, so the card radius is **16**.
+- The composer measures 260 native px from top border to bottom border, so it is **130 px** tall at rest with an empty one-line placeholder. Its toolbar bottom sits 32 native px (**16 px**) above the bottom border.
+- The large state discs (amber "!", green check, violet merged) measure 27–28 native px across, so they are **14 px**, not 16. The amber halo extends about 14 native px past the disc, so it is a **6 px** ring.
+- Every spinner (footer, chip, busy button) is a **14 px** full grey ring (`#e1e1e1`–`#e5e5e5`) with a darker **~90° arc** (`#7c7c7c`), 1.5 px stroke. It is not a 270° arc.
+- The shimmer band peaks at `#878787`–`#919191` over `#1a1a1a` text in light mode and at `#7d7d7d` over `#f0f0f0` text in dark mode.
+
+**Coordinate frame.** Unless a section says otherwise, an x value inside a card is measured from the card's **content box** (1 px border + 16 px padding = 17 px in from the card's outer edge). An x value for something outside a card (the disclosure row, chips) is measured from the **column edge**. So card lane 1 (content x 29) sits at column x 46, and the card's text indent (content x 66) sits at column x 83.
 
 | Topic | What the analyses said | Resolution |
 |---|---|---|
@@ -29,7 +35,13 @@ All sizes are CSS px at 100 % browser zoom. All colours are sRGB hex, light them
 | What the thinking row narrates | v1 analysis: "never step text"; signing: "Reading page 3 of 5" | **The thinking row narrates only work done before a component exists** (reading, planning). Once a card exists, all progress lives in the card. |
 | Stack position | merge: centred stack; db, signing: anchored to the composer | **Centred while it fits; once it overflows, the composer pins to the bottom and the thread scrolls.** Both are the same rule seen at different lengths. |
 | Mono font | SF Mono class (merge, db) vs "none used" (FAQ, map) | Mono is used **only for machine strings**. The FAQ and map demos simply contain none. |
-| Semantic colours | merge uses amber, green, violet; signing and map use blue only | **Use the full set, but each hue has exactly one meaning and appears only as text, 8–16 px dots, hairlines and small tints.** |
+| Semantic colours | merge uses amber, green, violet; signing and map use blue only | **Use the full set, but each hue has exactly one meaning and appears only as text, 8–14 px dots and discs, hairlines and small tints.** |
+| Spinner shape | 270° arc (merge) vs 90–120° arc on a track (db, v1) | **90° arc on a full grey track** (critic re-crop of the merge footer and status chip, `frames/02-merge-conflicts/extra/crit_spinner_chip.png`). A pending graph node is a different glyph: an orbit (see 3.3). |
+| Composer height | 116 (v1), 124 (db), 130 (merge), 150 (signing, zoomed) | **130** at rest: re-measured at full resolution (see calibration). 116 and 124 came from the 672 px scale assumption. |
+| Large node discs | 16 (merge analysis) vs 12–14 (v1) | **14 px** with a 6 px halo; re-measured on `full_10.png` and `full_29.png`. |
+| Decode timing | ≤500 ms (merge) vs 700–800 ms (v1) | **30 ms per locked character with no 500 ms cap.** The 15 fps sheet shows "Rotate session keys" (19 chars) taking ~530 ms and "Read sessions with the current key" (34 chars) still decoding after 650 ms. Cap at 1000 ms. |
+| Shimmer highlight | `#c8c8c8` on dark text (db, on grey text) | **`#8f8f8f` on `--text-1`** in light; `#c8c8c8` is right only on `--text-2` labels. Sampled on the merge "Thinking" label. |
+| Thinking-timeline pitch | 32 (spec draft) vs 40 (db analysis) | **40** (16/24 text plus 16 gap); re-measured on `frames/09-thread-opener/extra/thinking_final.png`. A source-chip row adds 40. |
 
 ---
 
@@ -37,10 +49,10 @@ All sizes are CSS px at 100 % browser zoom. All colours are sRGB hex, light them
 
 1. **The UI is the answer; prose is the caption.** Every agent turn is at most: one lead-in sentence, one component, one outcome sentence. The prose never restates what the card shows, and the card never re-explains the prose.
 2. **One component per task, mutated in place.** A job lives in a single card from start to finish. Steps insert rows, labels re-tense and buttons morph. Clicking a card button never posts a new user bubble or a new assistant turn.
-3. **One column, one edge.** The thread, cards, prose, chips and composer share the same 688 px column and the same left and right edges. Inside a card, every text row starts on the same hanging-indent x (the rail gutter).
-4. **Hierarchy by grey and weight, never by size.** All conversation text is 13–16 px, in three greys and two weights (400 and 600; 500 only on controls). There is no heading larger than 16 px anywhere in the conversation.
-5. **Colour is semantic and rationed.** Blue means yours or the action. Teal means someone else's. Amber means it needs you. Green means passed or ready. Violet means done or merged. Red is reserved for irreversible failure and deletions. Colour appears only as text, 8–16 px dots, 1.5 px lines and small tints. No surface larger than a chip is coloured, and nothing has a gradient.
-6. **Surfaces are drawn by hairlines.** A white card on a white page, with a 1 px border at about 7 % black and a shadow you can barely see. Dark mode lifts by one fill step instead. There is one padding level (16) and no panel nested inside a card.
+3. **One column, one edge.** The thread, cards, prose, chips and composer share the same 688 px column and the same left and right edges. Inside a card, every rail row's text starts on the same hanging-indent x (content x 66, the rail gutter). The card's header, check-chip row and footer start at content x 0; the footer's sentence starts at x 24 (16 px icon + 8 gap). Nothing else picks its own left edge.
+4. **Hierarchy by grey and weight, never by size.** All conversation sans text is 13–16 px (mono machine strings 11.5–14), in three greys. Weights: 400 for running text and rows; 600 for card titles, questions and `strong` in prose; 500 for compact labels that name an entity or a state (status words, option primaries, button and chip labels, popover entity names, the tool-line service name, "Finished thinking"). There is no heading larger than 16 px anywhere in the conversation; the single exception is the centred 18/600 title of a result panel (3.21), which sits alone in a card half.
+5. **Colour is semantic and rationed.** Blue means yours or the action. Teal means someone else's. Amber means it needs you. Green means passed, ready or open. Violet means done or merged. Red is reserved for irreversible failure and deletions. Colour appears only as text, 8 px dots, 14 px discs, 1.5 px lines and small tints. No surface larger than a chip is coloured, and nothing has a gradient.
+6. **Surfaces are drawn by hairlines.** A white card on a white page, with a 1 px border at about 7 % black and a shadow you can barely see. Dark mode lifts by one fill step instead. There is one padding level (16) and no inset panel inside a card. The only sanctioned exception is a **flush section** (3.20): a tab strip or table that runs edge to edge inside the card border, separated by hairlines, never inset with its own padding and radius.
 7. **Every wait has a shape.** Use the real skeleton (hairline rows), a spinner inside the thing that is loading, a shimmer on the gerund label, a counter (n/m), or a 2 px progress line. Never use a page spinner, a grey shimmer block or the word "Loading…".
 8. **Motion explains what changed.** Content swaps use a blur crossfade (150–250 ms, ease-out). New data opens its height, blurs in and decodes. Nothing bounces, flips, slides across the screen or scales by more than 2 %.
 9. **One action at a time; details on hover.** Each state has a single tinted pill button that advances as the state advances. Detail sits one hover away, in a popover or tooltip, never in a modal.
@@ -77,6 +89,8 @@ If the app has to work offline, self-host the same files from `@fontsource-varia
   --fs-mono:  12.5px;                      /* hashes, branch chips, ids */
   --fs-code:  14px;                        /* inline code in prose, popover code lines */
   --fs-badge: 12px;                        /* numerals in 18 px badges */
+  --fs-result: 18px;                       /* result-panel title only (3.21) */
+  --fs-mono-sm: 11.5px;                    /* table column types, row numbers, NULL badges (3.20) */
   --fw-regular: 400; --fw-medium: 500; --fw-strong: 600;
 
   /* ---------- neutrals ---------- */
@@ -132,6 +146,12 @@ If the app has to work offline, self-host the same files from `@fontsource-varia
   /* ---------- grey lane (main / context / idle) ---------- */
   --grey-dot: #c0c0c0;  --grey-line: #d4d4d4;  --grey-chip: #f1f1f1;
 
+  /* ---------- live-state helpers ---------- */
+  --spin-track: #e5e5e5;   /* full ring under every spinner arc */
+  --spin-arc:   #7c7c7c;   /* neutral arc; coloured arcs use the context's -dot token */
+  --shine-1:    #8f8f8f;   /* shimmer peak over --text-1 */
+  --shine-2:    #c8c8c8;   /* shimmer peak over --text-2 */
+
   /* ---------- spacing (4-based with 2/6 half-steps) ---------- */
   --s-0: 2px; --s-1: 4px; --s-1h: 6px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
   --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px;
@@ -148,7 +168,8 @@ If the app has to work offline, self-host the same files from `@fontsource-varia
   --chip-in-card-h: 28px;  /* check chips inside a card */
   --ref-h: 20px;           /* mono branch / ref chip */
   --badge: 18px;           /* count badge */
-  --dot: 8px;  --node-lg: 16px;  --rail-w: 1.5px;
+  --dot: 8px;  --node-lg: 14px;  --halo: 6px;  --orbit: 16px;  --spinner: 14px;  --rail-w: 1.5px;
+  --composer-min: 130px;   /* 16 pad + 52 (2 text lines) + 8 + 36 toolbar + 16 pad + 2 border */
   --gutter: 66px;          /* rail gutter; lanes at 11 / 29 / 48 */
   --lane-0: 11px; --lane-1: 29px; --lane-2: 48px;
 
@@ -205,7 +226,7 @@ If the app has to work offline, self-host the same files from `@fontsource-varia
   --violet-dot:#8e3ef3; --violet-ink:#b699f9; --violet-tint:#20182f; --violet-flash:#211c2c;
   --red-dot:#f43f5e; --red-ink:#fb7185; --red-tint:#2a1418; --diff-del:#c2435b; --diff-add:#6ec271;
   --sq-add:#3fcf5f; --sq-del:#d13a50; --sq-empty:#3a3a3a;
-  --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525;
+  --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525; --spin-track:#333333; --spin-arc:#a3a3a3; --shine-1:#7d7d7d; --shine-2:#6e6e6e;
   --shadow-card: inset 0 1px 0 rgba(255,255,255,.03);   /* lit top edge; elevation comes from the fill step */
   --shadow-composer: inset 0 1px 0 rgba(255,255,255,.04);
   --shadow-chip: 0 1px 0 rgba(0,0,0,.45);
@@ -230,7 +251,7 @@ If the app has to work offline, self-host the same files from `@fontsource-varia
     --violet-dot:#8e3ef3; --violet-ink:#b699f9; --violet-tint:#20182f; --violet-flash:#211c2c;
     --red-dot:#f43f5e; --red-ink:#fb7185; --red-tint:#2a1418; --diff-del:#c2435b; --diff-add:#6ec271;
     --sq-add:#3fcf5f; --sq-del:#d13a50; --sq-empty:#3a3a3a;
-    --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525;
+    --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525; --spin-track:#333333; --spin-arc:#a3a3a3; --shine-1:#7d7d7d; --shine-2:#6e6e6e;
     --shadow-card: inset 0 1px 0 rgba(255,255,255,.03);   /* lit top edge; elevation comes from the fill step */
     --shadow-composer: inset 0 1px 0 rgba(255,255,255,.04);
     --shadow-chip: 0 1px 0 rgba(0,0,0,.45);
@@ -246,13 +267,20 @@ body { font: var(--fw-regular) var(--fs-prose)/var(--lh-prose) var(--font-sans);
        -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 code, kbd, samp, .mono { font-family: var(--font-mono); font-variant-ligatures: none; }
 .num { font-variant-numeric: tabular-nums; }   /* timers, counters, n/m, token meter, diffstat */
+
+/* ---------- shared keyframes (referenced by 3.15 and section 4) ---------- */
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }  /* band travels left → right */
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes enter   { from { opacity: 0; filter: blur(var(--blur-in)); transform: translateY(4px); }
+                     to   { opacity: 1; filter: none; transform: none; } }
 ```
 
 Implementation note: plain CSS cannot share one declaration block between an attribute selector and a media query, so the dark values appear twice above. Edit both copies together, or generate them from one JS object at build time.
 
 **Dark-mode rules beyond the swap:**
 - Elevation comes from the fill step (`#0f0f0f` page → `#191919` card → `#252525` raised → `#3a3a3a` thumb), not from shadows.
-- Borders read slightly brighter on the top edge.
+- Borders read slightly brighter on the top edge: sampled on `06-merge-dark/extra/full_11.png`, the card border is `#2c2c2c` on top, `#282828` on the sides and `#252525` at the bottom, with a faint dark shadow (`#121212`–`#141414`) for about 2 px under the bottom edge. The `rgba(255,255,255,.07)` border plus the `inset 0 1px 0 rgba(255,255,255,.03)` card shadow reproduces this.
+- The active-row band (`--bg-row-active` `#1f1f1f`) and the violet merge band (`#211c2c`) stay clearly visible in dark (06 t018, t030); keep the same timings as light.
 - Tinted chips and buttons become deep tints with pastel text (blue 200, emerald 200, violet 300).
 - Dots and lines keep their saturation. Hue never changes between themes, only lightness.
 
@@ -288,7 +316,7 @@ The anatomy is listed left to right and top to bottom. "Column" means the 688 px
      - "Running"
      - "Recent", which holds saved Claude Code, Codex and Grok transcripts grouped by recency ("Today", "Yesterday", "Last 7 days")
   4. **Session row:** 32 high, padding 0 8, radius 8, gap 8. Contents:
-     - an 8 px state dot. Blue `--accent-dot` means running, with a 1.5 px spinner ring replacing the dot while a turn is live. Amber means it needs you. Green means the last goal finished clean. Violet means merged or shipped. Hollow grey (1.5 px `--text-3` ring) means idle or saved.
+     - an 8 px state dot. Blue `--accent-dot` means running, with a 12 px orbit (1.5 px, ~200° arc in `--text-2`) circling the dot while a turn is live. Amber means it needs you. Green means the last goal finished clean. Violet means merged or shipped. Hollow grey (1.5 px `--text-3` ring) means idle or saved.
      - the title at 14/400 in `--text-1`, truncated with an ellipsis
      - meta right-aligned at 13 px in `--text-3`, tabular: relative time ("now", "6m", "2h", "Tue"), or for a running row the live counter ("3/7")
      - a 12 px engine glyph (Claude, Codex, Grok) in `--text-3`, shown only on hover, before the time.
@@ -317,7 +345,7 @@ This is the backbone component. It shows one goal and every step, sub-agent and 
 
 **Header row (24 high):**
 - **Left:** the goal title at 16/600 in `--text-1`, then a space and the goal id or PR number at 16/400 in `--text-2` (for example "#128"). The id fades in only once it exists.
-- **Right:** the status as plain text with a dot, baseline-aligned: a 6 px dot, a 6 gap, then the label 14/500 in that hue. The states are "Running" (blue), "Needs you" (amber), "Ready" (green), "Done" or "Merged" (violet), and "Failed" (red). There is no pill background.
+- **Right:** the status as plain text with a dot, baseline-aligned: a 6 px dot, a 6 gap, then the label 14/500 in that hue. The states are "Running" (blue), "Needs you" (amber), "Open" or "Ready" (green), "Done" or "Merged" (violet), and "Failed" (red). There is no pill background. While the card is still building (no id yet) the slot is empty; the status fades and un-blurs in together with the id (`--t-base`).
 - **Header to first row:** 10.
 
 **Rows (32 each):**
@@ -331,12 +359,28 @@ This is the backbone component. It shows one goal and every step, sub-agent and 
   - context and other people's work are `--text-2`
   - anything needing attention is `--amber-ink`
 - **Optional inline tail, after the text:**
-  - a mono ref chip (h 20, radius 5, padding 0 6, 12.5/500, 10 gap). It is blue for your branch on `--accent-chip`, teal for another branch on `--teal-tint`, and grey `main` on `--grey-chip`.
+  - a mono ref chip (h 20, radius 5, padding 0 6, 12.5/500, 10 gap). It is blue for your branch on `--accent-chip`, teal for another branch on `--teal-tint`, grey `main` on `--grey-chip`, and violet (`--violet-ink` on `--violet-tint`) for your branch once merged.
+  - **A ref chip always sits on its branch's newest row and migrates when a newer row is inserted**: it blur-swaps out of the old row and into the new one (`--t-fast` each). In the merge demo `main` moves from "Bump next to 16.3" to Lena's newest commit when main is fetched, and then to the "Merged into main" row; `feat/session-refresh` moves to the new merge commit.
   - a count badge: an 18 px circle with a 1 px `--amber-ring`, `--amber-tint` fill and a 12 px numeral in `--amber-ink`. When resolved it becomes a green check circle (`--green-tint`, `--green-ring`, 10 px check), then fades out.
 - **Right meta, right-aligned:** a mono hash or id at 12.5 in `--text-3`, an 8 gap, then "You · now" or "Lena · 6m" at 14 in `--text-2`.
   - While a row is active, the slot shows a tabular counter ("2/3", "36/42") in `--text-2`.
   - For a status row it shows a lowercase word: "checking" (`--text-2`), "3 conflicts" (amber), "ready" (green), "merged" (violet).
-- **Active row:** a `--bg-row-active` band, full card width minus 8 each side, radius 8. The node becomes a spinner and the label shimmers. A 2 px `--green-progress` line on a `--track` runs under the text from x = 66 to the right content edge, filling in proportion to n/m.
+- **Active row:** a `--bg-row-active` band, full card width minus 8 each side (so it extends 8 px outside the content box on both sides), 30 high, radius 8. The node becomes an orbit and the label shimmers. A 2 px `--green-progress` line on a `--track` runs under the text from x = 66 to the right content edge, filling in proportion to n/m.
+
+**Row states** (one row, every state; the band is the only fill a row ever gets):
+
+| State | Node | Text | Meta slot | Extras |
+|---|---|---|---|---|
+| Pending (uncommitted work) | hollow 8 px ring, 1.5 px lane colour, plus orbit | `--text-1` "Uncommitted changes" | count in `--text-2` ("4 files") | ref chip of the branch |
+| Inserting | lane dot fades in | decodes (3.15), `--text-2` tail | hash and author fade in, never decode | `--amber-flash` band (incoming work) or `--green-flash` (success) |
+| Normal, yours | 8 px lane dot | `--text-1` | hash `--text-3` + "You · now" `--text-2` | |
+| Normal, others' | 8 px lane dot | `--text-2` | hash + "Lena · 6m" | |
+| Active | orbit | `--text-1` + shimmer | tabular counter "2/3" | band, optional progress line |
+| Conflicted | `--amber-dot` | `--amber-ink` | unchanged | count badge (amber) |
+| Resolving this one | orbit in amber | `--amber-ink` → `--text-1` (colour tween 200 ms) | unchanged | badge unchanged |
+| Resolved | dot tweens amber → `--grey-dot` | `--text-2` | unchanged | badge → green check (check draws in 200 ms), removed when the card reaches Ready |
+| Merged sweep | dot and rail tween to violet | unchanged | unchanged | `--violet-flash` band, fades in 400 ms |
+| Target row (lane 0, top) | dashed circle → disc | `--text-2` ("Merge into main" → decodes to "Merged into main") | lowercase state word | dashed diagonal to the head in the state colour |
 
 **Rail drawing (SVG, one per card, absolutely positioned under the rows):**
 - **Lines:** 1.5 px in the lane's `-line` colour. Branches leave and rejoin with cubic-Bézier S-curves spanning about 1.5 rows, never right angles.
@@ -345,27 +389,27 @@ This is the backbone component. It shows one goal and every step, sub-agent and 
 | Node | Spec | Meaning |
 |---|---|---|
 | Dot | 8 px filled, lane colour | completed step or commit |
-| Spinner ring | 12 px, 1.5 px, 270° arc in the lane colour on a `--text-4` track, `--t-spin` per turn | in progress |
-| Hollow ring | 11 px, 1.5–2 px stroke, card-coloured centre | merge point (a sub-agent rejoined) |
-| Dashed circle | 12 px, 1.5 px dash 2/2, `--text-3` | unknown or pending check |
+| Orbit | the row's 8 px dot (or hollow ring) stays still; a 16 px, 1.5 px, ~200° open arc in `--text-1` (amber while resolving a conflict) rotates around it at `--t-spin`, round caps, **no track** | in progress on this row (re-cropped: `frames/02-merge-conflicts/extra/crit_orbit_node.png`) |
+| Hollow ring | 11 px, 1.5–2 px stroke, card-coloured centre | merge point (a sub-agent rejoined, or a merge commit) |
+| Dashed circle | 12 px, 1.5 px dash 2/2, `--text-3`, rotating slowly (one turn per 2 s) while the check runs | unknown or pending check |
 | Dead end | 10 px × glyph in `--text-3`, branch connector dashed | abandoned path; text at `--text-3` states the reason |
-| Attention disc | 16 px `--amber-dot` with a white "!" (2 px stroke) and a 4 px `--amber-halo` ring | needs you |
-| Success disc | 16 px `--green-dot` with a white check | ready or passed |
-| Done disc | 16 px `--violet-dot` | finished or merged |
-| Failure disc | 16 px `--red-dot` with a white × | irreversible failure only |
+| Attention disc | 14 px `--amber-dot` with a white "!" (2 px stroke) and a 6 px `--amber-halo` ring | needs you |
+| Success disc | 14 px `--green-dot` with a white check (2 px stroke) | ready or passed |
+| Done disc | 14 px `--violet-dot`, plain | finished or merged |
+| Failure disc | 14 px `--red-dot` with a white × | irreversible failure only |
 
 - The target node (top row, lane 0) connects to the current head with a **dashed diagonal in the state colour**: blue while checking, amber with conflicts, green when ready, solid violet when done.
 
 **Check chips (only in the ready state):**
-- They sit in a row between the last row and the footer, with 12 above.
-- Each chip: h 28, pill, `--hairline`, card fill, padding 0 12, gap 8. Contents: a 12 px green check, a 6 gap, the label in `--text-1`, a space, then the value in `--text-2` ("Tests 42 passed").
+- They sit in a row between the last row and the footer, with 12 above and 12 below, starting at content x 0 (not at the 66 indent). The row opens with a height animation (`--t-layout`) and the chips fade in left to right, 40 ms apart.
+- Each chip: h 28, pill, `--hairline`, card fill, padding 0 12, 8 between chips. Contents: a 12 px green check, a 6 gap, the label in `--text-1`, a space, then the value in `--text-2` ("Tests 42 passed").
 - On hover a tooltip (3.18) shows the tool, the result and the duration.
 
 **Footer row (34 high, 12–16 below the last row or the chips):**
-- **Left:** a 16 px icon or spinner, an 8 gap, then the status sentence at 15/24.
+- **Left:** a 16 px icon or 14 px spinner (centred in a 16 box) at content x 0, an 8 gap, then the status sentence at 15/24 starting at x 24.
   - While working, it is a present participle in `--text-1` with shimmer ("Running 36 of 42 tests").
   - When done or blocked, it is a state icon plus a sentence. A hoverable count is in its hue with a 1 px dotted underline in the `-underline` colour, 3 px below the baseline.
-- **Right:** exactly one button (3.17). While the agent works, that button morphs in place into the neutral busy pill ("◌ Resolving").
+- **Right:** at most one button (3.17). While the agent works on its own (building, committing, pushing, fetching, checking), there is **no button at all**; the slot is empty. Once a user action exists, the button appears (block enter), and while that action runs it morphs in place into the neutral busy pill ("◌ Resolving") at the same width.
 
 **Card states:** building, running, needs you, resolving, testing (n/m), ready, finishing, done, failed. Every state must update the header status, the row meta, the footer, the node and the composer status chip **in the same frame**. A label and a visual that disagree (an amber "!" next to "Resolved") are a bug.
 
@@ -373,17 +417,19 @@ This is the backbone component. It shows one goal and every step, sub-agent and 
 
 ### 3.4 "Thinking / Worked for Ns" disclosure
 
-- **Layout:** one line, 24 high. A 12 px chevron-right in `--text-3` at x = 7. The label starts at x = 46, on the card's lane 1, so the turn shares the card's grid.
+- **Layout:** one line, 24 high. A 12 px chevron-right in `--text-3` at column x = 7. The label starts at column x = 46, which is exactly the card's lane 1 (17 px card inset + lane 29), so the turn shares the card's grid.
 - **Live:** the label "Thinking" at 15 in `--text-1` with shimmer, an 8 gap, then the seconds counter at 15 in `--text-3`, tabular, ticking every 1 s ("1s", "2s").
   - Before any component exists, the label may narrate concrete pre-work, with a blur-swap at most every 400 ms: "Reading 6 of 7 files", "Checking your profile", "Planning the steps".
   - Once a card mounts, the label returns to "Thinking" or settles. All progress moves into the card.
 - **Done:** a single string at 15 in `--text-2`. Use "Worked for 5s" if the turn acted, "Thought for 14s" if it only reasoned, and "Read for 5s" if it only read. Never use "Finished!" or "Done thinking".
 - **Expanded** (click or Enter; the chevron rotates 90° in `--t-fast`): the thinking timeline opens beneath with a height animation. It has no surface.
-  - **Rail:** a 1.5 px `--text-4` rail centred under the chevron. Step text starts at x = 46. The step pitch is 32, and a row of source chips adds 36.
-  - **Main-lane nodes:** an 8 px `--text-3` dot when done, an orbit spinner (22 px arc around the 8 px dot) when active, and a 14 px tool icon (search, file, terminal) for tool steps.
+  - **Rail:** a 1.5 px `--text-4` rail centred under the chevron (column x 13). Step text starts at x = 46. The step pitch is **40** (24 line + 16 gap), and a row of source chips adds **40** (30 chip + 10). The rail extends downward to the next node with a stroke draw (`--t-base`) as each step appears.
+  - **Main-lane nodes:** an 8 px `--text-3` dot when done, an orbit spinner (1.5 px, ~240° arc of a 22 px circle around the still 8 px dot, 0.8 s per turn) when active, and a 14 px tool icon (search, file, terminal) in `--text-2` for tool steps; the rail starts below the icon. Side-lane dots are 6 px in `--text-4` with a 16 px orbit.
+  - **Final node:** an 18 px solid `--accent` circle with a white 10 px check (2 px stroke). It scales 0.8 → 1 and fades in over 200 ms. This is the only filled accent node in the timeline.
   - **Side branches:** the node shifts to a lane 22 px right (the text does not indent) and the text is one tier lighter. A dead end gets × and a dashed connector. A merge-back gets a hollow ring.
   - **Text tiers:** the active step is `--text-1` with shimmer, a done step `--text-2` stating the finding in past tense ("Read 7 files about routing and auth"), and a branch or dead end `--text-3` ("Dead end: middleware can't read the request body").
-  - **Source chips:** h 28, pill, `--bg-card` on `--bg-page`, with a `--hairline` in light mode. Each has a 14 px file-type icon and the file name in sans 14 `--text-2`. Show at most 4, then "+3 more" as plain `--text-3` text.
+  - **Source chips:** h 30, pill, padding 0 12, 8 between chips, `--bg-card` on `--bg-page`, with a `--hairline` in light mode. Each has a 14 px file-type icon (a "TS" glyph, React atom, globe for web pages) in a muted tint, a 6 gap, and the file name in sans 14 `--text-2`. Show at most 4, then "+3 more" as plain `--text-3` text. Chips reveal left to right, 80 ms apart.
+  - **Live label rewriting:** an active step reads as a gerund with a live counter ("Reading 1 of 7 files" → "Reading 7 of 7 files", the digit swapping every 200–300 ms without motion). On completion it blur-swaps into a past-tense finding ("Read 7 files about routing and auth").
   - **Final row:** "Finished thinking" at 15/500 in `--text-1`, then the result summary in `--text-3` ("4 modules to deepen · 3 steps").
 
 ### 3.5 Agent prose and user bubble
@@ -399,7 +445,9 @@ This is the backbone component. It shows one goal and every step, sub-agent and 
   - Shape: right-aligned, max 76 % of the column. A single line is 44 tall, padding 10 17, pill radius (22). Multi-line text keeps radius 20.
   - Surface: `--bg-bubble` with `--shadow-bubble` and no border. Text 16/24 `--text-1`.
   - No avatar or timestamp. The timestamp appears in a tooltip after 600 ms of hover, at 13 in `--text-2`.
-  - Attachments sit above the bubble as tiles: 158 × 128, `--bg-raised`, radius 12, padding 10. The type label ("PDF") is 13 `--text-3` at the top-left. The name is 14 `--text-1`, 2 lines, middle-truncated.
+  - Attachments sit above the bubble as tiles, right-aligned, 8 above it: 158 × 128, `--bg-raised`, radius 12, padding 10. The type label ("PDF") is 13 `--text-3` at the top-left. The name is 14/19 `--text-1`, 2 lines, bottom-left, middle-truncated with the ellipsis leading line 2 ("Contractor / …Agreement").
+  - Multi-line bubbles: radius 20, padding 11 16, text wraps at the 76 % max width (the map demo's 2-line bubble is 72 tall).
+  - Mention tokens inside a bubble: see 3.8 (token without the brand mark).
 - **Rhythm:**
   - user bubble → agent turn: 28
   - within a turn (disclosure → prose → card → prose): 16
@@ -431,7 +479,7 @@ Every question the agent asks the user is a card in the flow. It is never a moda
 **Answering from the composer:** while a question card is open, typing in the composer and pressing Enter answers it. The card shows the typed text as its answer. The composer placeholder changes to "Answer, or ask something else".
 
 #### a. Choice
-- **Option rows:** full body width, 48 high, `--bg-raised`, radius 12, no border, padding 0 16, gap 8.
+- **Option rows:** full body width, 48 high, `--bg-raised`, radius 12, no border, padding 0 16, stacked with **8 px between rows**; primary and qualifier separated by a flex spacer (minimum 8).
   - Left: the primary text at 15/500 in `--text-1`.
   - Right: the qualifier at 14 in `--text-2` ("Recommended", "Your company", "3 files").
   - Hover: `--bg-hover` and a pointer cursor.
@@ -451,8 +499,8 @@ Every question the agent asks the user is a card in the flow. It is never a moda
   - drafting: the draft lines shimmer as they decode in
   - ready
   - sending: the button becomes the busy pill
-  - sent: the button is replaced by the receipt line "Sent to Lena · now" (prefix `--text-2`, name `--text-1`), fading in
-  - waiting: the footer left reads "Waiting for Lena" with shimmer and a teal 14 px spinner, and the meta shows the elapsed time "4m"
+  - sent: the spinner in the button blur-swaps to a 14 px check (drawn in 200 ms), and a receipt line "Sent to Lena · now" (prefix `--text-2`, name `--text-1`, 15) fades in 8 px below the footer, right-aligned under the button. After 1.5 s the button returns to its idle label (as in the signing demo's "Send email" → ✓ → "Sent to dana@…")
+  - waiting: the footer left reads "Waiting for Lena" with shimmer and a 14 px spinner with a `--teal-dot` arc, and the meta shows the elapsed time "4m"
   - replied: the reply appears in the body as a quoted row with a 2 px teal left bar, the author label at 14 `--text-2`, and the text at 15 `--text-1`. The agent continues, and the card collapses to its summary.
 
 #### c. Approval list
@@ -470,11 +518,28 @@ Every question the agent asks the user is a card in the flow. It is never a moda
 #### d. PR / commit graph with conflicts and checks
 This is the 3.3 card applied to git. Copy it exactly from the merge-conflict demo:
 - **Flow:** uncommitted → committing → pushing → open → fetching main → checking → conflicts (n) → resolving k of n → testing a of b → ready (check chips) → merging → merged (GitHub link).
+- **Per-state table** (header status · target-row meta · footer left · footer button · status chip):
+
+| State | Header | Target meta | Footer left | Button | Chip (3.7) |
+|---|---|---|---|---|---|
+| Committing | none | (no target row yet) | ◌ "Committing the last changes" | none | ◌ Creating PR |
+| Pushing | none | — | ◌ "Pushing 3 commits to origin" | none | ◌ Creating PR |
+| Open | ● Open (green) + "#128" fade in | target row inserts (decode) | ◌ "Opening the pull request" | none | ◌ Creating PR |
+| Fetching / checking | ● Open | `checking` | ◌ "Fetching main" → "Checking it merges cleanly" | none | ◌ Creating PR |
+| Conflicts | ● Open | `3 conflicts` (amber) | ⚠ "**3 conflicts** with main" | Resolve conflicts | ● #128 3 conflicts |
+| Resolving | ● Open | `2 conflicts` → `1 conflict` → `resolved` | ◌ "Merging main into the branch" → "Resolving conflict 2 of 3" | ◌ Resolving (busy) | ◌ #128 Resolving |
+| Testing | ● Open | `resolved` | ◌ "Running 36 of 42 tests" → "Pushing the merge" | ◌ Resolving | ◌ #128 Resolving |
+| Ready | ● Open | `ready` (green) | ✓ "Ready to merge" | ⑂ Merge (leading git-merge icon) | ● #128 Ready to merge |
+| Merging | ● Open | `ready` | ◌ "Merging into main" | ◌ Merging | ◌ #128 Merging |
+| Merged | ● Merged (violet) | `merged` (violet) | ⑂ "Merged into main" (violet icon, `--text-1` text) | GitHub (neutral, GitHub mark) | ⑂ #128 Merged; diffstat chip removed |
+
 - **Conflict popover:** opens on hover over the dotted "3 conflicts" link (3.18).
-  - Header: "**Lena Park** changed the same lines on main".
-  - Per file: "**middleware.ts** line 18", then two code lines. Each line has a 2 px left bar (theirs `#f2bd94`, yours `#a3cbf3`; dark `#985f40` / `#3c5085`), an author label at 14 `--text-2`, and mono 14 code in `--text-1`.
-- **Merge:** the merged commits' dots and lines recolour from blue to violet top to bottom, and a `--violet-flash` band sweeps those rows.
+  - Geometry: about 456 wide (≈ 66 % of the card), height by content (≈ 325 for three files). It opens above the footer, its left edge 32 px inside the card's left border, and it covers the rows behind it (opaque).
+  - Header: "**Lena Park** changed the same lines on main" (15; name 500 `--text-1`, rest `--text-2`), padding 16, then a `--divider`.
+  - Per file section (padding 12 16, `--divider` between sections): "**middleware.ts** line 18" (15; file 500 `--text-1`, "line 18" `--text-3`), 8 gap, then two code lines on a 26 px pitch. Each line: a 2 px × 22 px left bar at x 12 (theirs `#f2bd94`, yours `#a3cbf3`; dark `#985f40` / `#3c5085`), the author label ("Lena", "You") at 15 `--text-2` starting at x 23 in a 44 px column, then mono 14 code in `--text-1`, single line, truncated with an ellipsis.
+- **Merge:** the merged commits' dots and lines recolour from blue to violet top to bottom; the target node becomes the violet disc and its dashed diagonal becomes a solid violet curve; "Merge into main" decodes to "Merged into main" and takes the `main` ref chip; the `feat/…` ref chip turns violet; a `--violet-flash` band lights every row authored by You and fades.
 - **Diffstat:** shown in the composer chips (3.7), not in the card.
+- **The prose is written once.** The paragraph under the card is not rewritten as the state advances (the demo leaves "PR #128 is open…" after the merge). Accept that, or append at most one short outcome sentence at the end of the goal; never a second paragraph that restates the card.
 
 #### e. Freeform / info
 - **Info:**
@@ -490,7 +555,7 @@ This is the 3.3 card applied to git. Copy it exactly from the merge-conflict dem
 #### f. Checklist / progress
 - **Rows:** 32 high, on the 3.3 rail, with nodes only on lane 1. The node is:
   - todo: a hollow 8 px ring at 1.5 px `--text-4`, text `--text-2`
-  - active: spinner, a `--bg-row-active` band, shimmer text, the counter in the meta, and the 2 px progress line if measurable
+  - active: an orbit around the 8 px node (3.3), a `--bg-row-active` band, shimmer text, the counter in the meta, and the 2 px progress line if measurable
   - done: an 8 px `--text-3` dot (green only for checks that passed), text `--text-2` in past tense
   - skipped: × and `--text-3`
   - blocked: the amber attention disc, amber text, and a reason line below at 14 `--amber-ink`
@@ -502,7 +567,7 @@ This is the 3.3 card applied to git. Copy it exactly from the merge-conflict dem
 - **Position:** left-aligned to the column, 8 above the composer.
 - **Chip:** h 32, pill, `--hairline`, `--bg-card` fill, `--shadow-chip`, padding 0 12, gap 6 between chips. Text is 15: the label in `--text-1`, the value in `--text-2`.
 - **Kinds, in this order:**
-  1. **Goal status chip**, mirroring the current goal card. It morphs through the states: a quick action ("Create PR"), then "◌ Creating PR", then "● #128 3 conflicts" (an 8 px amber dot with halo; "#128" in `--text-1`; the state word in amber), then "◌ #128 Resolving", then "● #128 Ready to merge" (green), then "⑂ #128 Merged" (violet).
+  1. **Goal status chip**, mirroring the current goal card. It morphs through the states: a quick action ("Create PR"), then "◌ Creating PR", then "● #128 3 conflicts" (an 8 px amber dot with halo; "#128" in `--text-1`; the state word in amber), then "◌ #128 Resolving", then "● #128 Ready to merge" (green 8 px dot, no halo; "Ready to merge" in `--green-ink`), then "◌ #128 Merging", then "⑂ #128 Merged" (14 px violet git-merge icon; "Merged" in `--violet-ink`). Spinners in chips are the 14 px neutral spinner (3.15). "#128" is always `--text-1`; only the state word takes the hue. The chip keeps a fixed left edge; its width tweens (`--t-base`) and the text blur-swaps.
   2. **Diffstat chip** ("+482 −37"): numbers in `--diff-add` / `--diff-del` (sans, tabular, true minus sign), then five 7 × 7 squares (radius 1.5, gap 1.5) in `--sq-*`, then a 12 px chevron-down in `--text-3`. It opens a popover listing the changed files. It is removed once the goal finishes.
   3. **Context chip**: a 12 px ring gauge (1.5 px, `--text-3` arc on a `--track` ring) and "62%" in `--text-2`. It turns amber at 80 % and red at 95 %. Hover shows "124k of 200k tokens · Opus".
   4. **Quick-action chips** (empty state or idle only): at most 2 contextual actions ("Create PR", "Run tests"), with a 14 px icon in `--text-2`. Clicking one sends it as a user bubble.
@@ -511,19 +576,22 @@ This is the 3.3 card applied to git. Copy it exactly from the merge-conflict dem
 
 ### 3.8 Composer
 
-- **Surface:** column width, min 116 high (one text line plus toolbar). It grows with its content to at most 40 vh, then scrolls inside. Radius 20, `--hairline`, `--bg-card`, `--shadow-composer`, padding 16.
+- **Surface:** column width, **min 130 high** (`--composer-min`): padding 16 top, a textarea with a minimum of 2 lines (52), an 8 gap, the 36 toolbar, padding 16 bottom, plus the 1 px borders. An empty composer therefore shows one placeholder line and one blank line above the toolbar. It grows with its content to at most 40 vh, then scrolls inside. Radius 20, `--hairline`, `--bg-card`, `--shadow-composer`, padding 16. Height changes tween (`--t-layout`).
 - **Text:** 16/26 in `--text-1`. The placeholder is in `--text-3`: "Ask anything, or type / for skills". It becomes "Answer, or ask something else" while a question card is open.
-- **Toolbar** (36 high controls, bottom-aligned, 12 above the bottom edge, gap 8):
+- **Attachments inside the composer:** a row of tiles (3.5 attachment tile, 158 × 128, 8 between tiles) sits above the text, inside the padding, with 12 below it; the composer grows upward to fit (`--t-layout`). Uploading: the tile's contents drop to 50 % opacity and a 14 px spinner with an `--accent` arc sits 10 px in from the top-right corner; on completion the contents return to 100 % (`--t-fast`). Hover shows a 20 px × button (`--bg-card`, `--hairline`, 12 px × in `--text-2`) at the top-right corner.
+- **Toolbar** (36 high controls, bottom-aligned, **16** above the bottom border, gap 8):
   - **+** button: a 36 circle in `--bg-raised` with a 16 px plus in `--text-2`. It attaches a file, image or folder.
   - **Repo pill:** h 36, pill, `--bg-raised`, padding 0 14, a 16 px folder icon, an 8 gap, then the repo name at 15 in `--text-2`. It opens a popover of recent folders.
-  - **Engine segmented control:** track h 36, `--bg-raised`, 2 px inset. The thumb is `--bg-thumb` with `--shadow-thumb`. The active segment shows icon plus label ("Claude Code") in `--text-1`; inactive segments are icon-only (16 px, `--text-2`), with the label shown on hover in a tooltip.
+  - **Engine segmented control:** track h 36, pill, `--bg-raised`, 2 px inset. The thumb is a pill (h 32) in `--bg-thumb` with `--shadow-thumb`, padding 0 12, icon 16 + 6 gap + label. The active segment shows icon plus label ("Claude Code") at 15 in `--text-1`; inactive segments are icon-only, 40 wide (16 px icon, `--text-2`), with the label shown on hover in a tooltip. The demo's equivalent ("Local | cloud") measures about 124 × 36 with a 44 px inactive segment.
   - Flex spacer.
-  - **Effort:** a 4-bar signal icon (bars 2.5 wide, 1.5 gap, heights 4/6/8/10; active bars `--text-1`, the rest `--text-4`) and the label ("Low", "Medium", "High", "Max") at 15 in `--text-2`. It has no fill and opens a 4-row menu.
+  - **Effort:** a 4-bar signal icon (bars 2.5 wide, 1.5 gap, heights 4/6/8/10, bottom-aligned, radius 1; active bars `--text-1`, the rest `--text-4`): **Low = 1 bar, Medium = 2, High = 3, Max = 4**. Then an 8 gap and the label ("Low", "Medium", "High", "Max") at 15 in `--text-2`. It has no fill, hovers to `--text-1`, and opens a 4-row menu above it. The right group keeps the same 8 gap between hit areas; because the mic is a bare 16 px icon in a 36 px hit area, the visual space between "Medium", the mic glyph and the send button reads as about 18–24.
   - **Mic:** 16 px icon in `--text-2`, 36 hit area.
   - **Send:** a 36 circle, **solid `--accent`**, with a white 16 px arrow-up (2 px stroke). It is always blue, even when the input is empty.
     - While the agent is running, it morphs into **Stop**: a 36 circle in `--bg-raised` with a 10 px `--text-1` rounded square, using `--t-fast` blur-swap.
     - Enter sends; Shift+Enter adds a newline. While the agent is running, Enter queues the message and a "Queued" chip appears above.
-- **Slash and mention menu:** opens above the composer, left-aligned, width 360, radius 12, `--shadow-pop`. Rows are 40 high: a 16 px icon, the name at 15/500 and a description at 14 `--text-2`. The typed prefix shows inline ghost completion in `--text-3`. An accepted mention becomes a token (radius 6, `--accent-chip`, `--accent-ink`, 15/500).
+- **Slash and mention menu:** opens 8 above the composer, left-aligned, width 360, radius 12, `--hairline`, `--bg-card`, `--shadow-pop`, padding 6. Each row is **two lines, 56 high**, padding 8 12, radius 8: a 20 px icon (brand mark for connectors, Lucide icon for skills), a 12 gap, then the name at 15/500 `--text-1` over a description at 14/20 `--text-2` ("Databases, auth and storage"). The highlighted row has `--bg-raised`. Enter or Tab accepts; ↑↓ move. Motion: fade + rise 4 px, `--t-fast`.
+  - **Inline completion:** while typing, the matched prefix ("@Supa") renders in `--accent-dot` and the ghost completion ("base") in `--accent-line`, not grey.
+  - **Token:** an accepted mention becomes a token: radius 6, padding 2 6, `--accent-chip` fill, `--accent-ink` 15/500 text, with the 14 px brand mark before the name for connectors. In the sent user bubble the same token keeps its shape but drops the brand mark.
 - **Voice:** clicking the mic swaps the toolbar in place for:
   - a waveform strip (2 px bars on a 4 px pitch, `--text-2`, heights 4–24, scrolling right to left, with a 40 px fade on the left)
   - a cancel button (a 36 `--bg-raised` circle with ×)
@@ -599,7 +667,7 @@ The home view when more than one session is running. Each goal is one horizontal
 - **Rows:** 56 high, padding 0 16, a 1 px `--divider` between rows, hover `--bg-row-active`. Clicking a row opens the session.
   - **Title block (240 wide):** the goal title at 15/500 in `--text-1` (1 line, ellipsis); below it, at 13 in `--text-2`, "acme-webapp · Claude Code".
   - **Flow (flex 1):** a horizontal 1.5 px line in the lane colour through the vertical centre.
-    - Nodes sit on a 28 px pitch with the same node vocabulary (8 px dots, 12 px spinner, 16 px discs).
+    - Nodes sit on a 28 px pitch with the same node vocabulary (8 px dots, 16 px orbit, 14 px discs).
     - A sub-agent branches **below** the line on an S-curve 12 px down, rejoining at a hollow ring.
     - Completed segments use the lane colour; the not-yet part is dashed in `--text-4`, ending at a dashed target circle.
     - Hovering a node shows its step label in a tooltip ("Running 36 of 42 tests · 21s").
@@ -664,18 +732,19 @@ Inline feedback always comes first. A toast exists only for events in a session 
   color: transparent;
   animation: shimmer var(--t-shimmer) linear infinite;
   ```
-  - `--c` is the label colour. `--shine` is `#c8c8c8` on `--text-1` light, or `#6e6e6e` on `--text-1` dark.
-  - The sweep goes left to right.
-  - It stops (cross-fading to the static colour) when the step settles.
-- **Spinner:** an SVG 270° arc, 1.5 px stroke, round caps, in the context colour, on a `--text-4` track. Sizes are 12, 14 and 16. One turn takes `--t-spin`, linear.
-- **Decode text:** used for every row title that appears while work happens and for the result labels ("Merged into main"). Random lowercase alphanumerics settle left to right at one locked character per 30 ms, capped at 500 ms total. The unresolved tail is in `--text-3`. Meta text (hash, author) fades in and does not decode. Under `prefers-reduced-motion`, use a plain fade.
+  - `--c` is the label colour. `--shine` is `--shine-1` over `--text-1` labels (light `#8f8f8f`, dark `#7d7d7d`) and `--shine-2` over `--text-2` labels (light `#c8c8c8`, dark `#6e6e6e`). The earlier `#c8c8c8`-on-`--text-1` value was too strong: sampled peaks on the merge "Thinking" and footer labels are `#878787`–`#919191`.
+  - The visible band is about 40 px wide on a 16 px label (the 40 %→60 % stops of a 300 % background); for labels wider than 300 px keep the band at 40–60 px by setting `background-size` in px (`calc(100% + 120px)`), not 300 %.
+  - The sweep goes left to right (`@keyframes shimmer` in section 2), one pass per `--t-shimmer` including the pause.
+  - It stops (cross-fading to the static colour over `--t-fast`) when the step settles.
+- **Spinner:** an SVG with a full ring track (`--spin-track`, 1.5 px) and a **90° arc** (1.5 px, round caps) on top, rotating with `@keyframes spin` at `--t-spin`, linear. Default size **14** (footer, chips, busy buttons, tabs, card header status); 12 inside 18 px badges; 16 never. The arc is `--spin-arc` (neutral grey) by default and takes the context's `-dot` colour only when the spinner belongs to a coloured thing (green in a migration tab, `--accent` on an uploading tile). Graph nodes do not use this spinner; they use the orbit (3.3).
+- **Decode text:** used for every row title that appears while work happens and for the result labels ("Merged into main"). Random lowercase alphanumerics settle left to right at one locked character per **30 ms**, with the scrambled tail re-rolling every 30 ms; total time scales with length and is capped at **1000 ms** (lock several characters per tick beyond ~33 characters). The tail is the same length as the remaining text (the row never changes width by more than a glyph), in `--text-3` over the row's final colour. The row's gap opens first (height 0 → 32 over ~200 ms) and the text starts decoding when the gap is about 70 % open. Meta text (hash, author) fades in and does not decode. Under `prefers-reduced-motion`, use a plain fade.
 - **Blur-swap:** the old content goes to opacity 0 and `blur(5px)` in 100 ms. The new content comes from opacity 0 and `blur(5px)` in 150 ms, on the same baseline. The box animates its width or height in `--t-base` if it changes.
 
 ### 3.16 Icons
 
-- **Set:** Lucide (outline), stroke 1.5, round caps and joins. Sizes: 12 inside rows, 14 in chips, 16 in buttons and the composer, 18 at most.
+- **Set:** Lucide (outline), stroke 1.5, round caps and joins. Sizes: 12 inside rows, 14 in chips, 16 in buttons and the composer, 18 at most (20 only for brand marks in tool lines, connector tiles and mention menus).
 - **Colour:** icons are one tier lighter than their label (a `--text-3` icon next to a `--text-2` label). An icon is coloured only when it carries state (amber triangle-alert, green check, violet git-merge).
-- **No icon tiles:** no 32 px tinted circles behind icons, and no icon that only repeats the heading next to it.
+- **No icon tiles:** no 32 px tinted circles behind icons, and no icon that only repeats the heading next to it. The one exception is the **connector tile** in a sectioned data card's header (3.20): a 36 × 36 white square, radius 10, `--hairline`, `0 1px 2px rgba(0,0,0,.04)`, holding the connector's 20 px brand mark. It is never tinted and never holds a generic Lucide icon.
 - Brand marks (Claude, Codex, Grok, GitHub, Slack) are monochrome in `--text-2`. The only exception is when the brand mark is the connector speaking in a tool line, as in the db demo's Supabase mark.
 
 ### 3.17 Buttons
@@ -700,9 +769,60 @@ Inline feedback always comes first. A toast exists only for events in a session 
   - Content: a header line at 15 (the entity at 500 `--text-1`, the rest `--text-2`), then a 1 px `--divider`, then the sections.
   - Behaviour: it opens on hover after 120 ms, or on focus or click. It closes 100 ms after the pointer leaves, fading opacity only.
 - **Tooltip:**
-  - Surface: one line, h 30, radius 10, `--hairline`, `--bg-card`, `--shadow-pop`, padding 0 12, 8 above the target.
-  - Content: the primary part at 14 in `--text-1`, 12 gap, then the secondary part (duration, shortcut) in `--text-2` ("vitest · 42 passed, 0 failed   38s").
-  - Behaviour: it appears after 400 ms of hover, but instantly when moving between adjacent tooltip targets. Enter is a fade with blur 4 → 0 in `--t-fast`.
+  - Surface: one line, h 30, radius 10, `--hairline`, `--bg-card`, `--shadow-pop`, padding 0 12, 8 above the target and **left-aligned to the target's left edge** (it may overlap the row above; it never shifts layout). Flip below only when there is no room above.
+  - Content: the primary part at 15 in `--text-1` (the same size as the chip it explains; re-measured on 02 t023), 12 gap, then the secondary part (duration, shortcut) in `--text-2` ("vitest · 42 passed, 0 failed   38s"). Icon-button tooltips with a single word use 14.
+  - Behaviour: it appears after 400 ms of hover, but instantly when moving between adjacent tooltip targets (the content swaps without a gap). Enter is a fade with blur 4 → 0 in `--t-fast`. It dismisses immediately when the pointer leaves.
+
+### 3.19 Tool-call line (from the db demo; the default for Claude Code tool calls)
+
+A single line in the agent turn that shows one tool call or connector action. It has no box, no chevron and no expand affordance by default. It replaces a generic "Using tool…" message.
+
+- **Row:** 24 high at column x 0: a 20 px brand mark (connector) or 16 px Lucide tool icon in `--text-2` (Read: file, Edit: file-pen, Bash: terminal, Grep: search, Web: globe) in a 20 box, an 8 gap, the service or tool name at 15/500 `--text-1` ("Supabase", "Bash"), an 8 gap, then the action phrase at 15/400 `--text-2`, single line, truncated at the end. Mono appears only for a literal command or path inside the phrase (`npm test`), at 14.
+- **Running:** the action is a present participle with its object ("Reading acme-prod's schema", "Running `npm test`") and the shimmer runs over the action phrase only (`--shine-2`). No spinner.
+- **Done:** the phrase blur-swaps (100 ms out, 150 ms in, same baseline) to a past-tense phrase that carries the result ("Dry-ran it on acme-prod", "Read 6 files", "Ran 42 tests, 2 failed"), followed by a 6 gap and a 12 px check in `--green-ink` (1.75 px stroke, no circle) that draws in 200 ms.
+- **Failed:** the phrase states the cause ("Couldn't reach acme-prod") and the trailing glyph is a 12 px × in `--red-ink` for an irreversible failure or a 12 px triangle-alert in `--amber-ink` for a recoverable one.
+- **Grouping:** consecutive tool calls of one turn stack at a 28 px pitch. More than 3 collapse into one line: "Ran 7 tools" plus a 12 px chevron in `--text-3`; click expands the list with a height animation (`--t-layout`) and the chevron rotates 90°.
+- **Rhythm:** user bubble → first tool line 28–32; tool line → prose 16; tool line → card 16.
+- **Saved transcripts** render old tool calls in the done state, never re-animated.
+
+### 3.20 Sectioned data card (connector result, tables)
+
+The goal card's sibling for structured data that arrives in stages (a migration, a query result, a file set). It is the only card with flush sections. Measured on 03 t012–t027 at the db scale.
+
+- **Surface:** column width, radius 16 (the db demo's 20 is the zoomed recording), `--hairline`, `--bg-card`, `--shadow-card`, `overflow: hidden`, **no outer padding**; each section pads itself.
+- **Header (68 high, padding 16):** the connector tile (3.16), a 12 gap, then a 2-line title stack: title 15/500 `--text-1` (`add_workspaces`, mono only if it is a literal identifier) over a subtitle 13/18 `--text-2` ("acme-prod · 4 tables"). Right, vertically centred: the status as a 14 px spinner, a 6 gap, "Running" at 14 `--text-2` and the timer at 14/500 `--text-1`, tabular, one decimal, updating every 100 ms ("Running 4.5s"). Done: a 12 px check and "Applied in 9.9s", all 14/500 `--green-ink`, blur-swapped on the same baseline.
+- **Tab strip (44 high):** `--bg-raised` fill, a 1 px `--divider` on top, 8 top padding, tabs start at x 16.
+  - Tab: 36 high, padding 0 14, radius 10 on the top corners only, a 16 px table icon (inactive `--text-3`, active `--text-1`), 8 gap, label 14 (inactive 400 `--text-2`, active 500 `--text-1`), 8 gap, then a state glyph: the 14 px spinner with a `--green-dot` arc while that table runs, or a 12 px `--green-ink` check when done.
+  - The active tab is `--bg-card` and merges into the table below (no line under it). Inactive tabs are transparent with 1 × 16 px `--border-strong` separators between neighbours; a separator hides next to the active or hovered tab. Hover: an `--bg-hover` pill behind the tab, pointer cursor.
+  - A new tab enters from +8 px x with a fade (`--t-base`); the previous tab's fill fades to transparent.
+- **Table:** header row 36 (name 13/500 `--text-2`, then a 6 gap and the type in mono 11.5 `--text-4`); body rows **36**, `--divider` between them; exactly 5 rows visible with 16 px top and bottom fade masks while it scrolls.
+  - Columns: row number (mono 11.5, `--text-4`, right-aligned, 32 wide, widening for 5-digit numbers with thousands separators), mono id (12.5 `--text-3`, ~110), sans content columns sized to content (14 `--text-1`; secondary values such as emails 14 `--text-2`), a changed column, then an empty remainder.
+  - Primary key header: 12 px key icon in `--text-3`. A new or changed column: header text and a 12 px link icon in `--green-ink`, the whole column tinted `--green-tint` with 1 px `--green-ring` side borders; once indexed, the icon becomes a 12 px bolt.
+  - Categorical cells: a 6 px dot (any of the semantic `-dot` colours, used only as categories) + 8 gap + label.
+  - Empty cell awaiting backfill: a dashed badge "NULL" (mono 11, `--text-4`, 1 px dashed `--border-strong`, radius 6, padding 2 6).
+  - Backfill: a 2 px `--green-progress` scan line moves down through the rows at ~130 ms per row, trailing a 20 px `--green-flash` → transparent glow above it; each NULL it passes cross-fades to the value (200 ms).
+  - Row insert: a `--green-flash` band that decays to transparent over 500 ms; within the row the id and timestamp appear first and the categorical cell 100 ms later.
+- **Footer (60 high, padding 16, no top border):**
+  - Running: a badge (13/500, padding 2 8, radius 6; "Schema" on `--bg-raised` `--text-2`, "Data" on `--green-tint` `--green-ink`), a 12 gap, then the current statement in mono 13 `--text-2`, one line, ellipsised. Badge and statement blur-swap per step.
+  - Done: a 12 px green check + an outcome sentence at 14 `--text-2` with real numbers ("48,213 messages moved in, and indexed"); right, one tinted pill in the semantic hue (green here: `--green-tint` / `--green-ink`, h 30, padding 0 14, 14/500, trailing 12 px ↗).
+- **Afterwards:** tabs stay clickable. Switching tabs blur-crossfades the table (200 ms), replays a brief `--green-flash` on the rows, and swaps the footer sentence to that table's own summary.
+- **Mount:** the card appears at full height with the header text and a ghost grid of 5 hairline rows (no grey blocks); the column headers then fade in left to right 60 ms apart.
+
+### 3.21 Split preview card and result panel (from the signing demo)
+
+For a task that edits an artefact the user should watch (a document, a config file, a form): the card shows the artefact on the left and asks on the right.
+
+- **Surface:** column width, radius 16, `--hairline`, `--bg-card`, `0 8px 28px rgba(0,0,0,.035)` (a larger, fainter shadow than a goal card, because it carries a live preview), overflow hidden.
+- **Header (48 high):** padding 0 16, a 1 px `--divider` below (the only card with a header divider). Left: a 20 px kind icon in `--accent` (the signature scribble in the demo), 12 gap, the file name at 16/500 `--text-1`. Right: a 16 px maximize icon in `--text-2` (opens the artefact full-pane).
+- **Body:** fixed height (about 330 at our scale) so steps never change the card's height. Left half: the preview on `#fbfbfb` (dark `--bg-term`), the page itself white with a soft shadow and no border. It pans and zooms (about 3×, `--ease-in-out`, 450 ms) to the field the current step fills, highlights it (`--accent-chip` fill, 2 px `--accent` underline, a solid `--accent` tag chip with 13/600 white text, radius 4, at its top-left) and types the chosen value in live (per-character fade, ~300 ms). On completion it zooms out to the whole page.
+- **Right half:** a 3.6 question card body without its own surface (padding 16–18), footer pinned to the bottom: Back left, stepper centred, action right.
+- **Result panel** (replaces the right half when done, cross-fade 200 ms): vertically centred column, text centred. A 48 px circle in `--accent-chip` with a 20 px check (2.5 px stroke, `--accent-ink`) that scales 0.8 → 1 and draws (200 ms); 16 below it the title at 18/600 `--text-1` ("Signed for Acme Studio LLC"); 4 below, a deliberate 2-line sub at 16/24 `--text-2` naming who and when; 16 below, the buttons centred with a 12 gap: one neutral ("Download") and one tinted ("Send email"); a receipt line ("Sent to dana@…", 15, prefix `--text-2`, entity `--text-1`) fades in 12 below once the send completes. Success is blue here, not green: a finished artefact is "yours", not a passed check.
+
+### 3.22 Reference-only patterns (not in the GenUI Agent shell, specified so generated cards can use them)
+
+- **Media card (map demo):** an edge-to-edge visual (radius 16, 1 px `rgba(0,0,0,.08)`, no shadow, 5:3) with controls floating on it. A floating info card sits inset 12 from the left, right and bottom edges (radius 12, `#fff`, `0 2px 8px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04)`, padding 12): a 74 px thumbnail (radius 8), 16 gap, title 16/500 + "★ 4.8" 14 `--text-2`, meta 14 `--text-2` ("Lakeside café · 5 min walk"), 3 feature chips as 14 px icon + 14 `--text-2` text (no fill); right column: pager "‹ 1 / 3 ›" (16 px chevrons, counter 14 `--text-3`, no button fills) over one tinted pill (h 32, fixed width). Pins are white pills (h 26, `0 1px 3px rgba(0,0,0,.12)`, name 13/500 + minutes 13 `--text-3`); the selected pin inverts to `#1f1f1f` with white text. Changing selection: the old route vanishes, the info card content slides 4 px from the direction of travel (150 ms), the new route draws (stroke-dashoffset, 230 ms) and the camera fits origin + destination (500–600 ms, `--ease-in-out`). A theme change reveals through a feathered circular mask from the card centre (450–500 ms, `--ease-in-out`).
+- **Accordion list with follow-up tree (FAQ demo):** each item is its own card (radius 14, h 56 collapsed, padding 0 20, `--hairline`), 12 between cards; header = 16 px glyph, 14 gap, question 16 `--text-1` (goes to pure `#000`/`#fff` when open, no bold), 16 px chevron in `--text-2` at the right that rotates 180° in 200 ms. The answer (15/24 `--text-2`) hangs from the glyph's x, not the text's. Press scales to 0.985 for 100 ms. Each answer spawns exactly one follow-up: 300 ms after the answer ends the gap opens, a 1.25 px `--grey-line` connector draws down from x 30 of the parent and elbows square into the child's vertical centre, the child (indented 52, same right edge) fades in from scale 0.98, then its question decodes. The composer is the last row of the stack, the same size as a card, with a ↵ hint instead of a send button.
+- **Pixel glyph:** the FAQ and signing demos use a 3 × 3 grid of 4 px blue cells (5 tints from `#2e5bdc` to `#eaf3fd`) as their "generated" mark and as a spinner (cells shuffle while working). GenUI Agent does not use it: its question-card eyebrow keeps a plain 14 px Lucide icon (3.6), because the product already has the orbit, spinner and shimmer for live state.
 
 ---
 
@@ -715,8 +835,8 @@ The default easing is `--ease-out` (`cubic-bezier(.2,.8,.2,1)`). Camera-like mov
 | 1 | Block enter | opacity 0→1, blur 5→0, translateY 4→0 | 220 ms, ease-out | prose paragraph, disclosure line, card mount, tool line, chip |
 | 2 | Word stream | per word: opacity 0→1, blur 5→0, words in groups of 2–3 at ~30 words/s | 300 ms per word, ease-out | agent prose, side chat |
 | 3 | Blur-swap (in place) | old: opacity→0, blur→5 (100 ms); new: from blur 5 (150 ms); the box tweens width or height | 250 ms total, ease-out | status labels, button morphs, chip morphs, numbers, meta words, tense changes |
-| 4 | Row insert | height 0→32 (the rows below push down), then the row blurs in, its title decodes, and a flash band (`--amber-flash` for new incoming work, `--green-flash` for success) fades out 300 ms after the decode settles | open 180 ms; decode ≤500 ms; band fade 400 ms; consecutive inserts 270 ms apart | new steps, commits, approvals arriving |
-| 5 | Card build | the frame and header appear first, then rows reveal bottom to top (oldest first) | stagger 50 ms per row, ≤400 ms total | goal card, history-like lists |
+| 4 | Row insert | height 0→32 (the rows below push down), then the row blurs in, its title decodes, and a flash band (`--amber-flash` for new incoming work, `--green-flash` for success) fades out 300 ms after the decode settles | open 200 ms; decode 30 ms/char, ≤1000 ms; band fade 400 ms, starting 300 ms after the decode settles; consecutive inserts 270 ms apart (they overlap: the second row opens while the first is still decoding) | new steps, commits, approvals arriving |
+| 5 | Card build | the frame fades in with the title (from 30 % opacity and blur 4) while the card's height grows from header-only; the rail and rows then reveal bottom to top (oldest first); the footer status line comes last | stagger 50 ms per row, ≤400 ms total, height `--t-layout` | goal card, history-like lists |
 | 6 | Option stagger | option rows fade and blur in top to bottom | stagger 70 ms, each 220 ms | question card body, step change |
 | 7 | Step advance (multi-question) | hold 600 ms after a selection; old content fades out in 100 ms; new eyebrow and question fade in; options stagger; the stepper's current bar morphs its width | ~1.1 s total, ease-out | 3.6 cards |
 | 8 | Card collapse to summary | height to 40, body opacity→0 in 120 ms, summary fades in | 280 ms, ease-out | answered question cards |
@@ -724,7 +844,7 @@ The default easing is `--ease-out` (`cubic-bezier(.2,.8,.2,1)`). Camera-like mov
 | 10 | Stack re-centre / composer glide | translateY of the stack | 280 ms, ease-in-out | thread growth while centred |
 | 11 | Auto-scroll to the new item | smooth scroll | 300 ms, ease-in-out | only when the user is already at the bottom |
 | 12 | Shimmer | gradient band sweeping left to right across the text | 1.4 s per loop, linear | any live gerund label, "Thinking" |
-| 13 | Spinner | rotate 360° | 800 ms per turn, linear | inside nodes, buttons, chips, tabs |
+| 13 | Spinner / orbit | rotate 360° (90° arc on a track; orbit arc with no track around a still dot) | 800 ms per turn, linear; dashed pending circle 2 s per turn | buttons, chips, tabs, footer (spinner); graph and timeline nodes (orbit) |
 | 14 | Timer and counter tick | digit blur-swap, tabular numbers | 150 ms; thinking timer 1 s, operation timer 100 ms | "Thinking 4s", "36/42", "Running 3.0s" |
 | 15 | Progress line | width tween to n/m | 300 ms per update, linear | active measurable step |
 | 16 | Node morph | crossfade between node shapes; discs scale 0.9→1 | 180 ms, ease-out | spinner→dot, dashed→amber→green→violet |
@@ -739,10 +859,16 @@ The default easing is `--ease-out` (`cubic-bezier(.2,.8,.2,1)`). Camera-like mov
 | 25 | Press | `scale(.98)` | 80 ms down, 120 ms up | buttons, option rows |
 | 26 | Check draw | stroke-dashoffset on the check path | 200 ms, ease-out | done states, sent receipts |
 | 27 | Reorder (overview) | FLIP translateY | 280 ms, ease-in-out | row changes group |
+| 28 | Send | the composer text clears at once and the composer height tweens back to `--composer-min`; the user bubble enters at its right-aligned slot (rule 1); attachment tiles travel from the composer to their transcript slot as a shared element (FLIP translate, no scale beyond 1.02) | 250 ms; tiles 350 ms `--ease-in-out` | every send |
+| 29 | Disclosure appears | "Thinking 0s" enters (rule 1) about 300–1000 ms after send, before any card | 220 ms | every agent turn |
+| 30 | Ref chip migrates | blur-out on the old row, blur-in on the new row, no travel between rows | 100 + 150 ms | branch moves to a newer commit |
+| 31 | Check-chip row | height opens (rule 9), chips fade in left to right 40 ms apart; on merge the row collapses before the recolour cascade starts | 280 ms open / close | ready → merging |
+| 32 | Tool line settle | action phrase blur-swaps present → past, trailing check draws | 250 ms + 200 ms | 3.19 |
+| 33 | Preview pan / zoom | transform of the preview layer to frame the active field | 450 ms, ease-in-out | 3.21 |
 
 **Reduced motion:** under `@media (prefers-reduced-motion: reduce)`, keep opacity fades (at most 150 ms) and colour changes. Remove blur, translate, decode, shimmer (use a static `--text-2` label with an elapsed time instead) and cascades. Spinners stay, slowed to 1.5 s per turn.
 
-**Things that never animate:** the page background, the composer's frame, a card's position (it only grows in height), and the sidebar during a turn.
+**Things that never animate:** the page background, the composer's position and border (only its height tweens), a card's position (it only grows in height), and the sidebar during a turn.
 
 ---
 
@@ -757,13 +883,13 @@ The default easing is `--ease-out` (`cubic-bezier(.2,.8,.2,1)`). Camera-like mov
 - **Don't:** a black terminal slab in a light UI, or a dark header on a white card ("the vibe-coded header").
 
 **Type and hierarchy**
-- **Do:** 13–16 px only, three greys, and 400/600 (500 on controls); dim other people's work and darken the user's.
+- **Do:** 13–16 px only (18 only for a result-panel title), three greys, and 400/600 with 500 for compact entity and state labels (principle 4); dim other people's work and darken the user's.
 - **Don't:** 46 px numerals, uppercase tracked labels above every value, three header tiers, or everything at 500 weight.
 - **Do:** mono for hashes, branches, files and commands only.
 - **Don't:** mono for numbers, labels or "techy" decoration.
 
 **Colour**
-- **Do:** colour on text, 8–16 px dots and 1.5 px lines, plus small tints on chips; one accent family for actions (a tinted pill matching the blue send).
+- **Do:** colour on text, 8 px dots, 14 px discs and 1.5 px lines, plus small tints on chips; one accent family for actions (a tinted pill matching the blue send).
 - **Don't:** gradients, glow, purple-blue heroes, gradient app icons; black, green and grey buttons side by side; rainbow status badges.
 - **Do:** amber for conflicts and blocks, red only for irreversible failure.
 - **Don't:** red for a merge conflict, or stale colours left behind (an amber "!" next to "Resolved").
@@ -827,3 +953,36 @@ The default easing is `--ease-out` (`cubic-bezier(.2,.8,.2,1)`). Camera-like mov
 10. **Errors** give the cause, then the action ("Couldn't reach Claude Code. Retrying in 4s"). Never "Something went wrong" or "Oops".
 11. **Placeholders** teach one thing ("Ask anything, or type / for skills"), with no trailing ellipsis.
 12. **Keep the user's own words.** A typed goal becomes the card title with its casing intact.
+
+---
+
+## Critic changes
+
+A completeness pass against 30+ frames (02 t004/t006/t007/t010/t012/t016/t019/t023/t028/t030 plus fresh full-resolution extracts at 2.6 s and 4.0 s; 06 t011/t018/t030 and `full_11.png`; 03 t008/t014/t019/t027; 05 t003/t007/t011/t017/t036; 04 t020; 01 t004; 07 t015; 10 t010; 11 t008; 09 `thinking_final.png`; the 15 fps row-insert sheet) and the five analyses. Pixel checks used ffmpeg rgb24 profiles; new crops are in `frames/02-merge-conflicts/extra/crit_*`.
+
+**Corrected values**
+- Large node discs 16 → **14 px**, amber halo 4 → **6 px** (measured 27–28 native px; `--node-lg`, node table, principle 5, Do/Don't).
+- Spinner: 270° arc on a `--text-4` track → **90° arc on a full `#e5e5e5` track, 14 px default** (crop of the footer and chip spinner). New tokens `--spin-track`, `--spin-arc`, `--spinner`.
+- In-progress graph node: "12 px spinner ring" → **orbit**: still 8 px dot with a 16 px, ~200° dark arc and no track. Checklist, sidebar and overview references updated.
+- Shimmer peak over `--text-1`: `#c8c8c8` → **`#8f8f8f`** light, `#7d7d7d` dark (sampled); `#c8c8c8` kept only over `--text-2`. New `--shine-1` / `--shine-2` tokens and band-width rule.
+- Composer: min 116 → **130** (2-line textarea + 8 gap + toolbar); toolbar inset 12 → **16** from the bottom border. `--composer-min` token.
+- Decode: "≤500 ms cap" → **30 ms/char, cap 1000 ms**, gap opens ~200 ms first (15 fps sheet). Motion row 4 updated.
+- Thinking timeline pitch 32 → **40**, chip row adds 36 → **40**, source chips 28 → **30**; orbit 240° of 22 px; final node = 18 px solid accent check (was missing).
+- Tooltip text 14 → **15** for chip tooltips (matches the chip), left-aligned to the target.
+- Mention completion ghost: `--text-3` → **`--accent-dot` typed prefix + `--accent-line` ghost**; mention menu rows 40 one-line → **56 two-line**.
+
+**Contradictions resolved**
+- Principle 3 ("every text row starts on the hanging indent") vs the measured header, check chips and footer at content x 0 / 24: the rule now covers rail rows only.
+- Principle 4 ("500 only on controls") vs 500 used on status words, option primaries, popover entities and "Finished thinking": weight roles are now spelled out. The size range now admits mono 11.5–14 and the one 18 px result title.
+- Principle 6 ("no panel inside a card") vs the db demo's flush tab strip and table: a flush section is now the one sanctioned exception. Icon-tile ban vs the db demo's connector tile: now one explicit exception.
+- The coordinate frame (column x vs card-content x) is now stated, so "label at x 46 = card lane 1" is no longer ambiguous.
+
+**Missing states and components added**
+- Goal card: "Open" header status; empty status slot while building; **no footer button while the agent works alone**; full row-state table (pending, inserting, conflicted, resolving, resolved, merged sweep, target row); ref-chip migration rule; check-chip row placement and entrance.
+- PR card: a per-state table (header, target meta, footer, button, status chip) for all ten states; "◌ #128 Merging" chip state; merge choreography details (target row decodes and takes the `main` chip, branch chip turns violet, solid violet connector); conflict-popover geometry (456 wide, 32 px inset, 26 px code pitch, 44 px author column, bar position); the "prose is written once" rule.
+- Composer: attachment row inside the composer with uploading state; engine segmented-control geometry; effort bars per level.
+- User bubble: attachment placement, multi-line padding, mention tokens.
+- Teammate card: sent state now matches the demo's check → receipt line → idle button.
+- New **3.19 tool-call line**, **3.20 sectioned data card** (header, tab strip, table, NULL badge, scan line, footer badges, interactive tabs), **3.21 split preview card and result panel**, **3.22 reference-only patterns** (map/media card, accordion follow-up tree, pixel glyph and why it is not used).
+- Motion rows 28–33 (send, disclosure appearance, ref-chip migration, check-chip row, tool-line settle, preview pan/zoom); card build now describes the header-first height growth seen at 2.6 s; shared `@keyframes` (`shimmer`, `spin`, `enter`) added to the base CSS, which referenced `shimmer` without defining it.
+- Dark mode: measured border brightness per edge and the bottom shadow.

@@ -7,15 +7,18 @@
 <link rel="icon" href="/web/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;650&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/vendor/xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<div class="app" id="app">
-  <aside class="side" id="side" aria-label="Sessions"></aside>
-  <main class="main" id="main" tabindex="-1"></main>
-  <aside class="discuss" id="discuss" aria-label="Side discussion" hidden></aside>
+<div class="app">
+  <nav class="side" id="side" aria-label="Sessions"></nav>
+  <main class="main">
+    <div id="view" style="display:contents"></div>
+    <div class="termwrap" id="termwrap" hidden><div class="termframe"><div class="tstrip" id="tstrip"></div><div class="thost" id="thost"></div></div></div>
+  </main>
+  <aside class="side-panel" id="panel" aria-label="Side chat" hidden></aside>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/vendor/xterm/xterm/lib/xterm.js"></script>

@@ -42,53 +42,61 @@ try {
   await sendCdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 920, deviceScaleFactor: 1, mobile: false });
   await sendCdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
   await sendCdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/?t=${TOKEN}` });
-  check("app loaded", await waitFor(`!!document.querySelector('.side .brand')`, 15000));
-  await sleep(800);
+  check("app loaded", await waitFor(`!!document.querySelector('#side .srow-new')`, 15000));
+  await sleep(1200);
   await shot(`01-overview-${theme}`);
-  check("saved sessions listed in sidebar", (await ev(`document.querySelectorAll('.side-list.saved .row').length`)) > 5);
+  check("saved sessions listed in sidebar", (await ev(`document.querySelectorAll('[data-act=open-saved]').length`)) > 5);
 
   // Open a saved session (read-only) and wait for the generated goal.
-  await ev(`document.querySelector('.side-list.saved .row').click()`);
-  await sleep(600); await shot(`02-saved-loading-${theme}`);
-  check("saved session: generated goal shown", await waitFor(`!!document.querySelector('.goal .goal-text')`, 120000));
-  await sleep(300); await shot(`03-saved-goal-${theme}`);
+  await ev(`document.querySelector('[data-act=open-saved]').click()`);
+  await sleep(500); await shot(`02-saved-loading-${theme}`);
+  check("saved session: generated goal shown", await waitFor(`!!document.querySelector('#goal .goal-sub')`, 120000));
+  await sleep(1200); await shot(`03-saved-goal-${theme}`);
 
   // Start a live Claude Code session in the sandbox through the API, then open it.
   const s = await api("/api/sessions", { harness: "claude", cwd: SANDBOX, model: "sonnet", name: "Landing page",
-    prompt: "Read notes.md. Then ask me, using the AskUserQuestion tool, which headline style I prefer for the coffee landing page (offer 3 short options with descriptions). After I answer, write a 2-sentence hero in your reply and end by asking me in plain text two open questions: what the price is, and whether we offer a free trial." });
+    prompt: "Read notes.md. Then ask me, using the AskUserQuestion tool, which headline style I prefer for the coffee landing page (offer 3 short options with descriptions). After I answer, write a 2-sentence hero in your reply and end by asking me in plain text two open questions: what the monthly price is, and whether we offer a free trial." });
   await sleep(500);
   await ev(`GENUI.openLive(${JSON.stringify(s.id)})`);
-  check("trust card shown", await waitFor(`!!document.querySelector('.term-need')`, 60000));
-  await shot(`04-live-trust-${theme}`);
-  await ev(`document.querySelector('[data-act=term-yes]').click()`);
-  check("AskUserQuestion card shown", await waitFor(`!!document.querySelector('[data-ask]')`, 150000));
-  await sleep(400); await shot(`05-live-ask-${theme}`);
-  await ev(`document.querySelectorAll('[data-askpick]')[1].click()`);
-  await sleep(200); await shot(`06-live-ask-picked-${theme}`);
-  await ev(`document.querySelector('[data-act=ask-send]').click()`);
-  check("generated question cards after the turn", await waitFor(`document.querySelectorAll('.cards .q').length >= 1`, 240000));
-  await sleep(500); await shot(`07-live-cards-${theme}`);
+  const trust = await waitFor(`!!document.querySelector('[id^=tn-]') || !!document.querySelector('[id^=ask-]')`, 90000);
+  if (await ev(`!!document.querySelector('[id^=tn-]')`)) { await shot(`04-live-trust-${theme}`); await ev(`document.querySelector('[data-act=term-yes]').click()`); }
+  check("AskUserQuestion card shown", await waitFor(`!!document.querySelector('[id^=ask-]')`, 150000));
+  await sleep(500); await shot(`05-live-ask-${theme}`);
+  await ev(`document.querySelectorAll('[data-act=ask-pick]')[1].click()`);
+  await sleep(250); await shot(`06-live-ask-picked-${theme}`);
+  check("generated question cards after the turn", await waitFor(`document.querySelectorAll('.qcard[id^=gc-]').length >= 1`, 240000));
+  await sleep(1200); await shot(`07-live-cards-${theme}`);
+  // Answer the first card (input or choice), then send from the chip.
+  const kind = await ev(`(()=>{const c=document.querySelector('.qcard[id^=gc-]'); if(c.querySelector('[data-act=pick]')){c.querySelector('[data-act=pick]').click(); return 'choice';} const t=c.querySelector('textarea[data-act-input=field]'); if(t){t.value='18 dollars a month'; t.dispatchEvent(new Event('input',{bubbles:true})); t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return 'input';} return 'other';})()`);
+  await sleep(900);
+  check(`answered card collapses to a summary (${kind})`, await ev(`!!document.querySelector('.qsum-card')`));
+  await shot(`08-card-answered-${theme}`);
   // Terminal tab.
-  await ev(`document.querySelector('[data-tab=terminal]').click()`); await sleep(1500);
-  check("terminal shows the real Claude Code", await ev(`document.querySelector('.xterm-rows') && document.querySelector('.xterm-rows').textContent.length > 50`));
-  await shot(`08-terminal-${theme}`);
-  await ev(`document.querySelector('[data-tab=flow]').click()`); await sleep(300);
-  // Side discussion on the first card.
-  await ev(`document.querySelector('[data-discuss]').click()`);
-  await sleep(500); await shot(`09-side-opening-${theme}`);
-  check("side discussion opener", await waitFor(`document.querySelectorAll('.d-msg.ai:not(.pending)').length >= 1`, 180000));
-  await shot(`10-side-open-${theme}`);
-  await ev(`(()=>{const t=document.getElementById('side-in'); t.value='Assume 18 dollars a month. Is that fair for this kind of product?'; document.getElementById('side-msg').click();})()`);
-  check("side reply", await waitFor(`document.querySelectorAll('.d-msg.ai:not(.pending)').length >= 2`, 180000));
-  await ev(`document.getElementById('side-compose').click()`);
-  check("composed answer", await waitFor(`!!document.getElementById('side-composed') && document.getElementById('side-composed').value.length > 20`, 180000));
-  await shot(`11-side-composed-${theme}`);
-  await ev(`document.getElementById('side-send').click()`);
-  check("main session got the composed answer", await waitFor(`!document.getElementById('discuss').hidden === false || document.getElementById('discuss').hidden`, 10000));
-  await sleep(20000); await shot(`12-after-send-${theme}`);
+  await ev(`document.querySelector('[data-act=tab][data-tab=terminal]').click()`); await sleep(1800);
+  check("terminal shows the real Claude Code", await ev(`!!document.querySelector('.xterm-rows') && document.querySelector('.xterm-rows').textContent.length > 50`));
+  await shot(`09-terminal-${theme}`);
+  await ev(`document.querySelector('[data-act=tab][data-tab=flow]').click()`); await sleep(400);
+  // Side chat on the remaining open card.
+  await ev(`(document.querySelector('.qcard[id^=gc-] [data-act=discuss]')||document.querySelector('[data-act=side-toggle]')).click()`);
+  await sleep(600); await shot(`10-side-opening-${theme}`);
+  check("side chat opener", await waitFor(`document.querySelectorAll('.sp-ai').length >= 1`, 180000));
+  await sleep(400); await shot(`11-side-open-${theme}`);
+  await ev(`(()=>{const t=document.getElementById('sp-in'); t.value='We are thinking no free trial, but a money-back guarantee. Sensible?'; document.querySelector('[data-act=side-msg]').click();})()`);
+  check("side reply", await waitFor(`document.querySelectorAll('.sp-ai').length >= 2`, 180000));
+  await ev(`document.querySelector('[data-act=side-compose]').click()`);
+  check("composed answer", await waitFor(`!!document.getElementById('sp-composed') && document.getElementById('sp-composed').value.length > 20`, 180000));
+  await sleep(300); await shot(`12-side-composed-${theme}`);
+  await ev(`document.querySelector('[data-act=side-send]').click()`);
+  check("side chat closed after sending", await waitFor(`document.getElementById('panel').hidden`, 10000));
+  // Send the remaining answered card from the chip, if any.
+  if (await ev(`!!document.querySelector('[data-act=send-answers]:not([disabled])')`)) await ev(`document.querySelector('[data-act=send-answers]').click()`);
+  check("agent works on the answers", await waitFor(`GENUI.current() && GENUI.current().state === 'run'`, 20000));
+  await sleep(1500); await shot(`13-working-${theme}`);
+  await waitFor(`GENUI.current() && GENUI.current().state !== 'run'`, 180000);
+  await sleep(6000); await shot(`14-after-${theme}`);
   // Orchestrator + new goal page.
-  await ev(`GENUI.go('overview')`); await sleep(600); await shot(`13-orchestrator-${theme}`);
-  await ev(`GENUI.go('new')`); await sleep(400); await shot(`14-new-goal-${theme}`);
+  await ev(`GENUI.go('overview')`); await sleep(800); await shot(`15-orchestrator-${theme}`);
+  await ev(`GENUI.go('new')`); await sleep(500); await shot(`16-new-goal-${theme}`);
   await api(`/api/sessions/${s.id}/stop`, {});
 } catch (e) {
   console.log("FAIL exception " + e.message);

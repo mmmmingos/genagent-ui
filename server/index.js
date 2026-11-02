@@ -75,6 +75,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith("/web/")) return serveFile(res, inside(WEB, p.slice(4)) || "");
     if (p.startsWith("/vendor/xterm/")) return serveFile(res, inside(path.join(MOD, "@xterm"), p.slice(13)) || "");
+    if (p.startsWith("/vendor/morphdom/")) return serveFile(res, inside(path.join(MOD, "morphdom", "dist"), p.slice(16)) || "");
 
     if (!p.startsWith("/api/")) { res.writeHead(404); return res.end(); }
     if (!authed(req)) return json(res, 403, { error: "Not signed in to this app" });
