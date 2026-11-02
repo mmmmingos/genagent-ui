@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Flow Board</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 20px; align-items: start; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--panel); padding: 5px 12px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+
+  .pipe { padding: 14px 16px 16px; margin-bottom: 14px; }
+  .pipe-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .pipe-head h3 { font-size: 15px; }
+  .pipe-head .agent { font-size: 12px; color: var(--muted); }
+  .pipe-head .chip { margin-left: auto; }
+  .pipe-head .age + .chip { margin-left: 0; }
+
+  .flow { display: flex; align-items: stretch; overflow-x: auto; padding: 4px 2px 6px; }
+  .node {
+    flex: 1 1 0; min-width: 96px; max-width: 150px; min-height: 64px; padding: 8px 10px; border-radius: 9px;
+    border: 1.5px solid var(--c, var(--line)); background: var(--cs, var(--panel));
+    display: flex; flex-direction: column; gap: 4px; text-align: left; color: var(--text);
+  }
+  .node.s-wait { border-style: dashed; background: var(--panel); color: var(--muted); }
+  .node .lbl { font-weight: 600; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+  .node .sub { font-size: 11.5px; color: var(--muted); }
+  button.node { cursor: pointer; font: inherit; }
+  button.node:hover { box-shadow: 0 0 0 3px var(--cs); }
+  .node.current { box-shadow: 0 0 0 3px var(--cs); }
+  .node .sub { overflow-wrap: anywhere; }
+  .edge { flex: none; width: 14px; align-self: center; height: 2px; background: var(--line); position: relative; }
+  .edge::after { content: ""; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left-color: var(--line); border-right: 0; }
+  .edge.done { background: var(--done); }
+  .edge.done::after { border-left-color: var(--done); }
+
+  .queue { position: sticky; top: 72px; padding: 14px 0 6px; max-height: calc(100vh - 92px); overflow: auto; }
+  .queue h2 { font-size: 15px; padding: 0 16px 8px; }
+  .qgroup { padding: 8px 16px 2px; font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .qitem { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 16px; border-left: 3px solid transparent; color: var(--text); }
+  .qitem:hover { background: var(--panel-2); border-left-color: var(--c); }
+  .qitem .t { font-weight: 600; }
+  .qitem .w { font-size: 12px; color: var(--muted); }
+  .qitem .u { font-size: 12px; color: var(--c); margin-top: 2px; }
+  .empty { padding: 6px 16px 10px; color: var(--faint); font-size: 13px; }
+
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+    .queue { position: static; max-height: 45vh; order: -1; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Agent control</span>
+  <nav aria-label="Views">
+    <a href="index.html">Overview</a>
+    <a href="flow.html" aria-current="page">A · Flow</a>
+    <a href="inbox.html">B · Inbox ★</a>
+    <a href="board.html">C · Board</a>
+  </nav>
+  <div class="coord" id="coord"></div>
+</header>
+
+<main class="layout">
+  <section aria-label="Pipelines">
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Filter pipelines">
+        <button aria-pressed="true" data-f="all">All</button>
+        <button aria-pressed="false" data-f="blocked">Needs action</button>
+      </div>
+      <div class="legend" aria-label="Legend">
+        <span><i class="dot s-you"></i>Needs you</span>
+        <span><i class="dot s-team"></i>Needs a teammate</span>
+        <span><i class="dot s-running"></i>Running</span>
+        <span><i class="dot s-sched"></i>Scheduled</span>
+        <span><i class="dot s-done"></i>Done</span>
+      </div>
+    </div>
+    <div id="pipes"></div>
+  </section>
+
+  <aside class="panel queue" aria-label="Your queue">
+    <h2>Your queue</h2>
+    <div id="queue"></div>
+  </aside>
+</main>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+  const { P, esc, stepState, counts, currentStep, pipelineState, openNeeds, renderCoord, meter, chip, owedHTML, ageHTML, age, oldest, openStep, onChange } = AC;
+  let filter = "all";
+
+  document.querySelectorAll(".seg button").forEach((b) => b.onclick = () => {
+    filter = b.dataset.f;
+    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    render();
+  });
+
+  function nodeHTML(p, s, isCurrent) {
+    const st = stepState(s);
+    const cls = "s-" + st;
+    let sub = esc(s.note || "");
+    if (s.needs) {
+      const c = counts(s);
+      sub = s.state === "done" ? `${meter(s)}<span>${c.ok}/${c.total} locked</span>`
+        : `${meter(s)}<span>${c.ok}/${c.total} locked</span><span style="width:100%">${owedHTML(s) || ""}</span>`;
+    }
+    const inner = `<span class="lbl"><span class="dot ${cls}"></span>${esc(s.label)}</span><span class="sub" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${sub}</span>`;
+    const title = `${s.label}: ${st === "ready" ? "starting next step" : window.STATE_LABEL[st]}`;
+    return s.needs
+      ? `<button class="node ${cls} ${isCurrent ? "current" : ""}" data-p="${p.id}" data-s="${s.id}" title="${esc(title)}" aria-label="${esc(title)}. Open inputs">${inner}</button>`
+      : `<div class="node ${cls} ${isCurrent ? "current" : ""}" title="${esc(title)}">${inner}</div>`;
+  }
+
+  function render() {
+    renderCoord(document.getElementById("coord"));
+    const blocked = (p) => ["you", "team"].includes(pipelineState(p));
+    const list = P.filter((p) => filter === "all" || blocked(p))
+      .sort((a, b) => blocked(b) - blocked(a));
+    document.getElementById("pipes").innerHTML = list.map((p) => {
+      const cur = currentStep(p);
+      const parts = [];
+      p.steps.forEach((s, i) => {
+        if (i) parts.push(`<span class="edge ${p.steps[i - 1].state === "done" ? "done" : ""}" aria-hidden="true"></span>`);
+        parts.push(nodeHTML(p, s, s === cur));
+      });
+      return `<article class="panel pipe">
+        <div class="pipe-head"><h3>${esc(p.name)}</h3><span class="agent">${esc(p.agent)}</span>${cur.needs && cur.state !== "done" && oldest(cur) ? `<span class="age ${oldest(cur) >= 24 ? "old" : ""}" style="margin-left:auto">stuck ${age(oldest(cur))}</span>` : ""}${chip(pipelineState(p))}</div>
+        <div class="flow">${parts.join("")}</div>
+      </article>`;
+    }).join("") || `<p class="muted">Nothing is blocked.</p>`;
+    document.querySelectorAll("button.node").forEach((b) => b.onclick = () => openStep(b.dataset.p, b.dataset.s));
+
+    const needs = openNeeds();
+    const group = (key, label, cls) => {
+      const items = needs.filter((x) => x.group === key);
+      return `<div class="qgroup"><span class="dot ${cls}"></span>${label} · ${items.length}</div>` +
+        (items.length ? items.map((x) => `<button class="qitem ${x.group === "team" ? "s-team" : x.group === "later" ? "s-sched" : "s-you"}" data-p="${x.p.id}" data-s="${x.s.id}" data-n="${x.n.id}">
+          <div class="t">${esc(x.n.title)}</div>
+          <div class="w">${esc(x.p.name)} › ${esc(x.s.label)}${x.group === "team" ? " · " + esc(x.n.from) : ""}</div>
+          <div class="u" style="display:flex;gap:8px;justify-content:space-between"><span>${esc(x.unlockNote)}</span>${x.upcoming ? "" : ageHTML(x.n)}</div>
+        </button>`).join("") : `<div class="empty">Nothing here.</div>`);
+    };
+    document.getElementById("queue").innerHTML =
+      group("now", "Needs you now", "s-you") + group("team", "Waiting on teammates", "s-team") + group("later", "Coming up", "s-sched");
+    document.querySelectorAll(".qitem").forEach((b) => b.onclick = () => openStep(b.dataset.p, b.dataset.s, b.dataset.n));
+  }
+  onChange(render);
+  render();
+</script>
+</body>
+</html>

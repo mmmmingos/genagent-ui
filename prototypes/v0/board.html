@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Board</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .cols { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 14px; padding: 20px; overflow-x: auto; align-items: start; }
+  .col { background: var(--panel-2); border-radius: var(--radius); padding: 10px; min-height: 200px; }
+  .col h2 { font-size: 13px; display: flex; gap: 7px; align-items: center; padding: 2px 4px 10px; }
+  .col h2 .n { margin-left: auto; color: var(--muted); font-weight: 500; }
+  .card { display: block; width: 100%; text-align: left; padding: 12px; margin-bottom: 10px; border-left: 3px solid var(--c); color: var(--text); }
+  button.card:hover { box-shadow: 0 0 0 3px var(--cs); }
+  .card .nm { font-weight: 650; }
+  .card .ag { font-size: 12px; color: var(--muted); }
+  .card .st { margin-top: 8px; font-size: 13px; }
+  .card .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .steps { display: flex; gap: 2px; margin-top: 10px; }
+  .steps i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+  .steps i.d { background: var(--done); }
+  .steps i.c { background: var(--c); }
+  .who { font-size: 12px; margin-top: 6px; }
+  .empty { color: var(--faint); font-size: 13px; padding: 4px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Agent control</span>
+  <nav aria-label="Views">
+    <a href="index.html">Overview</a>
+    <a href="flow.html">A · Flow</a>
+    <a href="inbox.html">B · Inbox ★</a>
+    <a href="board.html" aria-current="page">C · Board</a>
+  </nav>
+  <div class="coord" id="coord"></div>
+</header>
+
+<p style="margin:16px 20px 0;font-size:13px" class="muted">Not recommended after the UX review: a card sits in one column only, so it hides what teammates owe, and you can't decide anything from here. Kept for comparison.</p>
+<main class="cols" id="cols"></main>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+  const { P, esc, stepState, counts, currentStep, pipelineState, renderCoord, meter, owedHTML, openStep, onChange } = AC;
+  const COLS = [
+    ["you", "Needs you", "s-you"],
+    ["team", "Owed by teammates", "s-team"],
+    ["running", "Running", "s-running"],
+    ["sched", "Scheduled", "s-sched"],
+    ["done", "Done", "s-done"]
+  ];
+
+  function render() {
+    renderCoord(document.getElementById("coord"));
+    document.getElementById("cols").innerHTML = COLS.map(([key, label, cls]) => {
+      const col = (p) => { const st = pipelineState(p); return st === "ready" ? "running" : st === "wait" ? "sched" : st; };
+      const items = P.filter((p) => col(p) === key);
+      return `<section class="col" aria-label="${label}">
+        <h2><span class="dot ${cls}"></span>${label}<span class="n">${items.length}</span></h2>
+        ${items.map((p) => cardHTML(p, cls)).join("") || `<div class="empty">Nothing here.</div>`}
+      </section>`;
+    }).join("");
+    document.querySelectorAll("button.card").forEach((b) => b.onclick = () => openStep(b.dataset.p, b.dataset.s));
+  }
+
+  function cardHTML(p, cls) {
+    const s = currentStep(p);
+    const idx = p.steps.indexOf(s);
+    const steps = p.steps.map((x, i) => `<i class="${i < idx ? "d" : i === idx ? "c" : ""}"></i>`).join("");
+    let extra = s.note ? `<div class="row">${esc(s.note)}</div>` : "";
+    if (s.needs) {
+      const c = counts(s);
+      extra = `<div class="row">${meter(s)} ${c.ok}/${c.total} inputs locked</div>
+        <div class="who muted">Owed: ${owedHTML(s)}</div>`;
+    }
+    const tag = s.needs ? "button" : "div";
+    return `<${tag} class="panel card ${cls}" ${s.needs ? `data-p="${p.id}" data-s="${s.id}"` : ""}>
+      <div class="nm">${esc(p.name)}</div>
+      <div class="ag">${esc(p.agent)}</div>
+      <div class="st">Step ${idx + 1} of ${p.steps.length}: <b>${esc(s.label)}</b></div>
+      ${extra}
+      <div class="steps" aria-hidden="true">${steps}</div>
+    </${tag}>`;
+  }
+  onChange(render);
+  render();
+</script>
+</body>
+</html>

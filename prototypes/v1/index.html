@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GenUI Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Sessions">
+    <div class="side-head">
+      <span class="logo">GenUI Agent</span>
+      <span class="sample">sample</span>
+    </div>
+    <button class="new-goal" id="new-goal"><span>＋</span> New goal</button>
+    <button class="side-item" data-view="overview" id="nav-overview">
+      <span class="si-icon">◎</span><span class="si-main"><span class="si-title">Orchestrator</span><span class="si-sub" id="orch-sub"></span></span>
+    </button>
+    <div class="side-label">Sessions</div>
+    <nav id="session-list"></nav>
+    <div class="side-foot">
+      <div class="muted small">Attached: <b>4</b> in companion terminals, <b>1</b> read-only from its transcript</div>
+    </div>
+  </aside>
+
+  <main class="main" id="main" tabindex="-1"></main>
+
+  <aside class="discuss" id="discuss" aria-label="Side discussion" hidden></aside>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

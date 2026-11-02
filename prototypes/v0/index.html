@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Control Prototypes</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  main { max-width: 980px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 26px; margin-bottom: 8px; }
+  .lede { color: var(--muted); max-width: 70ch; }
+  .how { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 22px 0 30px; }
+  .how div { padding: 14px; }
+  .how b { display: block; margin-bottom: 4px; }
+  .how span { font-size: 13px; color: var(--muted); }
+  .opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .opt { padding: 18px; text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 6px; }
+  .opt:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+  .opt .k { font-size: 12px; color: var(--accent); font-weight: 650; }
+  .opt h2 { font-size: 17px; }
+  .opt p { margin: 0; font-size: 13px; color: var(--muted); }
+  .try { margin-top: 30px; padding: 18px; }
+  .try ol { margin: 8px 0 0; padding-left: 20px; }
+  .try li { margin: 4px 0; }
+  @media (max-width: 820px) { .how, .opts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Agent control</span>
+  <nav aria-label="Views">
+    <a href="index.html" aria-current="page">Overview</a>
+    <a href="flow.html">A · Flow</a>
+    <a href="inbox.html">B · Inbox ★</a>
+    <a href="board.html">C · Board</a>
+  </nav>
+  <span class="sample-tag" style="margin-left:auto">sample data · nothing here talks to a real agent</span>
+</header>
+<main>
+  <h1>One place to see what the agents need from you</h1>
+  <p class="lede">Three layouts of the same idea, using the same sample pipelines from the Trillet SEO and marketing agents. Answers you give collect on the step, and the next worker starts fresh with only the locked answers. Iterating on one answer happens in a side thread that is never sent to the worker, so it never fills an agent's context.</p>
+
+  <div class="how">
+    <div class="panel"><b>1 · Agent stops</b><span>A step lists what it needs: say 6 inputs, each owned by you or a teammate.</span></div>
+    <div class="panel"><b>2 · You answer as you can</b><span>Lock 4 now. The 2 owed by Laurence wait without blocking you.</span></div>
+    <div class="panel"><b>3 · Iterate on the side</b><span>Work out a hard one in a side thread. Only the final line is kept.</span></div>
+    <div class="panel"><b>4 · Fresh hand-off</b><span>At 6 of 6, a new worker starts by itself with a short packet instead of a long chat. Undo is there for a few seconds.</span></div>
+  </div>
+
+  <div class="opts">
+    <a class="panel opt" href="inbox.html" style="outline:2px solid var(--accent-strong)"><span class="k">OPTION B · RECOMMENDED</span><h2>Inbox + pipelines</h2><p>Home screen. One question at a time, keyboard-driven, oldest and closest-to-unblocking first. A Pipelines tab gives one row per pipeline with its flow strip, and every item shows its flowchart.</p></a>
+    <a class="panel opt" href="flow.html"><span class="k">OPTION A</span><h2>Flow</h2><p>Every pipeline as a full flowchart, plus your queue. Good for seeing <i>why</i> something is stuck; too long to scroll at 30 pipelines, so B borrows its flowchart for drill-down.</p></a>
+    <a class="panel opt" href="board.html"><span class="k">OPTION C · NOT RECOMMENDED</span><h2>Board</h2><p>One card per pipeline, in columns by state. Hides what teammates owe and you can't act from it. Kept for comparison.</p></a>
+  </div>
+
+  <div class="panel try">
+    <b>Things to try</b>
+    <ol>
+      <li>In <b>Inbox</b>, the top item is <b>Hero claim wording</b> (waiting 1 day). Press <kbd>t</kbd>, push back once in the side thread, then lock it. Only the final line is kept.</li>
+      <li>Open <b>Native connector or SIP trunk?</b> and press <b>Ask Laurence on Slack</b>: it moves to "asked" with a nudge. Then use <b>I know this</b> on both of Laurence's items: at 6 of 6, Mockup starts by itself (try Undo).</li>
+      <li>On a LinkedIn post, use <b>Lock all 3 drafts</b>, or <kbd>j</kbd>/<kbd>k</kbd> and <kbd>l</kbd> one at a time.</li>
+      <li>Switch to the <b>Pipelines</b> tab for one row per pipeline, and click a step in any flowchart to open its inputs.</li>
+    </ol>
+  </div>
+</main>
+</body>
+</html>

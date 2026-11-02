@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Inbox</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .wrap { display: grid; grid-template-columns: 400px minmax(0, 1fr); height: calc(100vh - 57px); }
+  .list { border-right: 1px solid var(--line); overflow: auto; background: var(--panel); display: flex; flex-direction: column; }
+  .tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .tabs button { border: 0; background: none; padding: 8px 10px; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 550; }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent-strong); }
+  .hint { padding: 8px 16px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .grp { padding: 12px 16px 4px; font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 4px 10px; width: 100%; padding: 10px 16px; border: 0; background: none; text-align: left; color: var(--text); border-left: 3px solid transparent; }
+  .row:hover { background: var(--panel-2); }
+  .row[aria-selected="true"] { background: var(--accent-soft); border-left-color: var(--accent-strong); }
+  .row .dot { margin-top: 6px; }
+  .row .t { font-weight: 600; }
+  .row .m { font-size: 12px; color: var(--muted); grid-column: 2 / 4; }
+  .row .strip { grid-column: 2 / 4; }
+  .strip { display: flex; gap: 3px; align-items: center; margin-top: 4px; }
+  .strip i { flex: 1; max-width: 26px; height: 6px; border-radius: 3px; background: var(--line); }
+  .strip i.done { background: var(--done); }
+  .strip i.you { background: var(--you); }
+  .strip i.team { background: var(--team); }
+  .strip i.running { background: var(--running); }
+  .strip i.sched { background: var(--sched); }
+  .strip i.ready { background: var(--ready); }
+
+  .detail { overflow: auto; padding: 24px 32px; }
+  .crumb { font-size: 12px; color: var(--muted); }
+  .q { font-size: 20px; font-weight: 650; margin: 6px 0 6px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .flow { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px 0; margin: 14px 0 18px; }
+  .fnode { padding: 5px 9px; border-radius: 7px; font-size: 12.5px; border: 1.5px solid var(--c, var(--line)); background: var(--cs, var(--panel)); color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+  .fnode.s-wait { border-style: dashed; color: var(--muted); background: transparent; }
+  .fnode.cur { box-shadow: 0 0 0 3px var(--cs); font-weight: 650; }
+  button.fnode:hover { box-shadow: 0 0 0 3px var(--cs); }
+  .farrow { align-self: center; color: var(--faint); padding: 0 4px; font-size: 12px; }
+  .card { padding: 16px; margin-bottom: 14px; }
+  .card h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  .card .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .siblings { list-style: none; margin: 0; padding: 0; }
+  .siblings li { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
+  textarea.big { width: 100%; min-height: 90px; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  .btn.primary kbd { color: #fff; border-color: rgba(255,255,255,.5); }
+  .zero { text-align: center; padding: 80px 20px; color: var(--muted); }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: minmax(0, 1fr); height: auto; }
+    .list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+    .detail { padding: 18px 16px; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Agent control</span>
+  <nav aria-label="Views">
+    <a href="index.html">Overview</a>
+    <a href="flow.html">A · Flow</a>
+    <a href="inbox.html" aria-current="page">B · Inbox ★</a>
+    <a href="board.html">C · Board</a>
+  </nav>
+  <div class="coord" id="coord"></div>
+</header>
+
+<div class="wrap">
+  <div class="list">
+    <div class="tabs" role="tablist" aria-label="List">
+      <button role="tab" id="tab-queue" aria-selected="true">Queue</button>
+      <button role="tab" id="tab-pipes" aria-selected="false">Pipelines</button>
+    </div>
+    <div class="hint"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>l</kbd> lock · <kbd>t</kbd> side thread · <kbd>o</kbd> all inputs</div>
+    <div id="list" role="listbox" aria-label="Items" tabindex="0"></div>
+  </div>
+  <main class="detail" id="detail"></main>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+  const { P, find, esc, stepState, counts, currentStep, pipelineState, openNeeds, renderCoord, owedHTML, ageHTML, age, oldest,
+    openStep, onChange, toast, lock, lockAllDrafts, chip, meter } = AC;
+  let tab = "queue";
+  let selected = null;   // need id in queue tab
+  let selPipe = null;    // pipeline id in pipelines tab
+
+  document.getElementById("tab-queue").onclick = () => { tab = "queue"; render(); };
+  document.getElementById("tab-pipes").onclick = () => { tab = "pipes"; render(); };
+
+  const stripHTML = (p) => `<span class="strip" aria-hidden="true">${p.steps.map((s) => `<i class="${stepState(s)}"></i>`).join("")}</span>`;
+
+  function flowHTML(p, cur) {
+    return `<div class="flow" aria-label="Pipeline steps">${p.steps.map((s, i) => {
+      const st = stepState(s);
+      const inner = `<span class="dot s-${st}"></span>${esc(s.label)}${s.needs && s.state !== "done" ? ` <span class="faint">${counts(s).ok}/${s.needs.length}</span>` : ""}`;
+      const node = s.needs
+        ? `<button class="fnode s-${st} ${s === cur ? "cur" : ""}" data-fp="${p.id}" data-fs="${s.id}" title="${esc(s.label)}: open inputs">${inner}</button>`
+        : `<span class="fnode s-${st} ${s === cur ? "cur" : ""}" title="${esc(window.STATE_LABEL[st] || st)}${s.note ? ": " + esc(s.note) : ""}">${inner}</span>`;
+      return (i ? `<span class="farrow" aria-hidden="true">→</span>` : "") + node;
+    }).join("")}</div>`;
+  }
+
+  function render() {
+    renderCoord(document.getElementById("coord"));
+    document.getElementById("tab-queue").setAttribute("aria-selected", tab === "queue");
+    document.getElementById("tab-pipes").setAttribute("aria-selected", tab === "pipes");
+    tab === "queue" ? renderQueue() : renderPipes();
+    document.querySelectorAll("[data-fp]").forEach((b) => b.onclick = () => openStep(b.dataset.fp, b.dataset.fs));
+    document.querySelector(".row[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+  }
+
+  // ---- Queue tab ------------------------------------------------------------
+  function renderQueue() {
+    const needs = openNeeds();
+    if (!needs.find((x) => x.n.id === selected)) selected = (needs.find((x) => x.group === "now") || needs[0] || {}).n?.id || null;
+    const groups = [["now", "Needs you now", "s-you"], ["team", "Owed by teammates", "s-team"], ["later", "Coming up", "s-sched"]];
+    document.getElementById("list").innerHTML = groups.map(([key, label, cls]) => {
+      const items = needs.filter((x) => x.group === key);
+      if (!items.length) return "";
+      return `<div class="grp">${label} · ${items.length}</div>` + items.map((x) => `
+        <button class="row" role="option" aria-selected="${x.n.id === selected}" data-n="${x.n.id}" tabindex="-1">
+          <span class="dot ${cls}"></span>
+          <span class="t">${esc(x.n.title)}</span>
+          ${x.upcoming ? "" : ageHTML(x.n)}
+          <span class="m">${esc(x.p.name)} · ${key === "team" ? (x.n.askedAt != null ? "asked " : "owed by ") + esc(x.n.from) : esc(x.unlockNote)}</span>
+        </button>`).join("");
+    }).join("") || `<div class="zero" style="padding:30px">Nothing open.</div>`;
+    document.querySelectorAll(".row").forEach((r) => r.onclick = () => { selected = r.dataset.n; render(); });
+
+    const x = needs.find((y) => y.n.id === selected);
+    const d = document.getElementById("detail");
+    if (!x) { d.innerHTML = `<div class="zero"><h2>Inbox zero</h2><p>Every agent has what it needs. They stay quiet until they need you again.</p></div>`; return; }
+    const { p, s, n } = x;
+    const c = counts(s);
+    const isMerge = n.kind === "merge";
+    const lockWord = isMerge ? "Merge" : "Lock";
+    const drafts = s.needs.filter((m) => m.status === "draft");
+    let action = "";
+    if (x.upcoming) action = `<div class="panel card"><h3>Not open yet</h3><p style="margin:0">Opens ${esc(n.opensOn || "when the earlier step finishes")}. It'll move to "Needs you now" then.</p></div>`;
+    else if (n.status === "draft" || n.status === "iterating") action = `
+      <div class="panel card"><h3>${n.status === "iterating" ? "Latest draft from the side thread" : isMerge ? "Ready to merge" : "Draft for you to lock"}</h3>
+      <p style="margin:0">${n.draft ? esc(n.draft) : "<i>The agent is writing a first draft…</i>"}</p>
+      <div class="actions">
+        <button class="btn primary" id="lock" ${n.draft && !n.pending ? "" : "disabled"}>${lockWord} <kbd>l</kbd></button>
+        ${isMerge ? `<button class="btn" id="all">Open PR details</button>` : `<button class="btn" id="thread">${n.status === "iterating" ? "Continue" : "Change it in a"} side thread <kbd>t</kbd></button>`}
+        ${drafts.length > 1 ? `<button class="btn" id="lockall">Lock all ${drafts.length} drafts in this step</button>` : ""}
+      </div></div>`;
+    else if (n.from === "You") action = `
+      <div class="panel card"><h3>Your answer</h3><textarea class="big" id="ans" aria-label="Your answer" placeholder="Only what you lock goes to the next worker."></textarea>
+      <div class="actions"><button class="btn primary" id="lockText">Lock</button><button class="btn" id="thread">Work it out in a side thread <kbd>t</kbd></button></div></div>`;
+    else action = `
+      <div class="panel card"><h3>${n.askedAt != null ? `Asked ${esc(n.from)} on Slack` : `Only ${esc(n.from)} can answer this`}</h3>
+      ${n.askedAt != null ? `<p style="margin:0">The coordinator nudges tomorrow and locks the answer when ${esc(n.from)} replies.</p>` : ""}
+      <div class="actions"><button class="btn" id="ask">${n.askedAt != null ? "Nudge now" : `Ask ${esc(n.from)} on Slack`}</button><button class="btn" id="self">I know this</button></div></div>`;
+
+    d.innerHTML = `
+      <div class="crumb">${esc(p.agent)} · ${esc(p.name)} › ${esc(s.label)}</div>
+      <div class="q">${esc(n.title)} ${x.upcoming ? "" : ageHTML(n)}</div>
+      <div class="muted">${esc(n.why)}</div>
+      ${flowHTML(p, s)}
+      ${action}
+      <div class="panel card"><h3>${c.total === 1 ? `When this is done, ${esc((AC.nextStep(p, s) || {}).label || "the pipeline")} starts by itself` : `${esc(s.label)} needs ${c.total} · ${c.ok} locked · ${esc((AC.nextStep(p, s) || {}).label || "the next step")} starts by itself when all ${c.total} are locked`}</h3>
+        <ul class="siblings">${s.needs.map((m) => `<li><span class="dot ${m.status === "approved" ? "s-done" : m.from === "You" ? "s-you" : "s-team"}"></span>${esc(m.title)} <span class="faint">${m.status === "approved" ? "locked" : "owed by " + (m.from === "You" ? "you" : esc(m.from))}</span></li>`).join("")}</ul>
+        ${isMerge ? "" : `<div class="actions"><button class="btn small" id="all">Open all inputs <kbd>o</kbd></button></div>`}
+      </div>`;
+
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+    on("lock", () => { if (n.draft && !n.pending) { lock(p, s, n, n.draft, isMerge ? "Merged (sample)" : "Locked"); render(); } });
+    on("lockall", () => { lockAllDrafts(p, s); render(); });
+    on("lockText", () => {
+      const v = document.getElementById("ans").value.trim();
+      if (!v) { toast("Type an answer first."); return document.getElementById("ans").focus(); }
+      lock(p, s, n, v); render();
+    });
+    on("thread", () => openStep(p.id, s.id, n.id, { thread: true }));
+    on("all", () => openStep(p.id, s.id, n.id));
+    on("ask", () => { n.askedAt = 0; toast(`Asked ${n.from} on Slack (sample: nothing sent).`); render(); });
+    on("self", () => openStep(p.id, s.id, n.id, { self: true }));
+    document.querySelectorAll("#detail [data-fp]").forEach((b) => b.onclick = () => openStep(b.dataset.fp, b.dataset.fs));
+  }
+
+  // ---- Pipelines tab: one compact row each, full flow on the right -----------
+  function renderPipes() {
+    const order = { you: 0, team: 1, ready: 2, running: 3, sched: 4, wait: 5, done: 6 };
+    const list = [...P].sort((a, b) => order[pipelineState(a)] - order[pipelineState(b)]);
+    if (!list.find((p) => p.id === selPipe)) selPipe = list[0].id;
+    document.getElementById("list").innerHTML = list.map((p) => {
+      const cur = currentStep(p);
+      const st = pipelineState(p);
+      const why = cur.needs && cur.state !== "done" ? owedHTML(cur) : esc(cur.note || "");
+      return `<button class="row" role="option" aria-selected="${p.id === selPipe}" data-p="${p.id}" tabindex="-1">
+        <span class="dot s-${st}"></span>
+        <span class="t">${esc(p.name)}</span>
+        ${cur.needs && cur.state !== "done" && oldest(cur) ? `<span class="age ${oldest(cur) >= 24 ? "old" : ""}">stuck ${age(oldest(cur))}</span>` : ""}
+        ${stripHTML(p)}
+        <span class="m">${esc(cur.label)} · ${why}</span>
+      </button>`;
+    }).join("");
+    document.querySelectorAll(".row").forEach((r) => r.onclick = () => { selPipe = r.dataset.p; render(); });
+
+    const p = P.find((x) => x.id === selPipe);
+    const cur = currentStep(p);
+    document.getElementById("detail").innerHTML = `
+      <div class="crumb">${esc(p.agent)}</div>
+      <div class="q">${esc(p.name)} ${chip(pipelineState(p))}</div>
+      <div class="muted">${esc(p.goal)}</div>
+      ${flowHTML(p, cur)}
+      <div class="panel card"><h3>Now: ${esc(cur.label)}</h3>
+        ${cur.needs && cur.state !== "done" ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${meter(cur)} ${counts(cur).ok} of ${cur.needs.length} locked · ${owedHTML(cur)}</div>
+          <div class="actions"><button class="btn primary" id="open">Open inputs</button></div>`
+          : `<p style="margin:0">${esc(cur.note || window.STATE_LABEL[cur.state])}</p>`}
+      </div>`;
+    const o = document.getElementById("open");
+    if (o) o.onclick = () => openStep(p.id, cur.id);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    const drawer = document.getElementById("drawer");
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (["INPUT", "TEXTAREA"].includes(e.target.tagName) || (drawer && !drawer.hidden)) return;
+    const rows = [...document.querySelectorAll(".row")];
+    const i = rows.findIndex((r) => r.getAttribute("aria-selected") === "true");
+    const pick = (r) => { if (!r) return; tab === "queue" ? (selected = r.dataset.n) : (selPipe = r.dataset.p); render(); };
+    if (e.key === "j") pick(rows[Math.min(i + 1, rows.length - 1)]);
+    if (e.key === "k") pick(rows[Math.max(i - 1, 0)]);
+    if (e.key === "l") document.getElementById("lock")?.click();
+    if (e.key === "t") document.getElementById("thread")?.click();
+    if (e.key === "o") (document.getElementById("all") || document.getElementById("open"))?.click();
+  });
+
+  // Deep link: inbox.html?item=needId
+  const item = new URLSearchParams(location.search).get("item");
+  if (item) selected = item;
+  if (new URLSearchParams(location.search).get("tab") === "pipes") tab = "pipes";
+  onChange(render);
+  render();
+</script>
+</body>
+</html>
