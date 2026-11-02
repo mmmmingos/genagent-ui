@@ -20,8 +20,9 @@ export function resolveBin(name) {
       const dir = path.dirname(cmd);
       const exeIn = txt.match(/"%dp0%\\([^"]+\.exe)"/i);
       const jsIn = txt.match(/"%dp0%\\([^"]+\.(?:c?js|mjs))"/i);
-      if (exeIn) found = { file: path.join(dir, exeIn[1]), pre: [] };
-      else if (jsIn) found = { file: process.execPath, pre: [path.join(dir, jsIn[1])] };
+      // A JS entry point wins: shims for node CLIs also mention node.exe itself.
+      if (jsIn) found = { file: process.execPath, pre: [path.join(dir, jsIn[1])] };
+      else if (exeIn && !/(^|\\)node\.exe$/i.test(exeIn[1])) found = { file: path.join(dir, exeIn[1]), pre: [] };
       else found = { file: process.env.ComSpec || "cmd.exe", pre: ["/c", cmd] };
     } else if (where[0]) found = { file: where[0], pre: [] };
   } catch { /* not installed */ }
