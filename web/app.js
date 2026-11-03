@@ -153,7 +153,7 @@ function openCards(file, g) { return (g && g.cards ? g.cards : []).map((c, i) =>
 // One state per live session, used everywhere (sidebar dot, header, card status, chips, footer).
 function liveState(l) {
   if (!l.alive) return "off";
-  if (l.pendingAsk || l.pendingPermission || l.terminalNeeds || l.status === "needs") return "needs";
+  if (l.pendingAsk || l.pendingPermission || l.terminalNeeds || l.status === "needs" || l.turnError) return "needs";
   if (l.status === "working" || l.status === "starting") return "run";
   // Between a turn ending and its new cards arriving, the reply is still being read: not "your turn" yet.
   if (l.file && S.genBusy.has(l.file)) return "reading";
@@ -318,7 +318,23 @@ function feed(ref) {
     out.push(`<div class="disc" id="thinking">${icon("chev")}<span class="shimmer">Working</span><span class="t3 num">${since ? Math.max(1, Math.round((Date.now() - since) / 1000)) + "s" : ""}</span></div>`);
   }
   if (lastAgent > lastUser) out.push(`<div class="prose" id="pa-${hid(ev[lastAgent].text.slice(0, 120))}" data-anim>${md(ev[lastAgent].text)}</div>`);
+  const err = ev.slice(lastUser + 1).reverse().find((e) => e.role === "error") || (ref.l && ref.l.turnError ? { text: ref.l.turnError.message, code: ref.l.turnError.code } : null);
+  if (err && !working) out.push(errorCard(ref, err));
   return out.join("");
+}
+// A turn that failed before replying: say why, and offer the way out.
+function errorCard(ref, err) {
+  const model = /model/i.test(err.code || "") || /model.*not supported|model_not_found/i.test(err.text);
+  const hint = model && ref.harness === "codex" ? "Codex's model in ~/.codex/config.toml isn't available on your account. Change <code>model</code> there, or run this step with Claude Code." : "Nothing was changed. Try again, or open the terminal to see more.";
+  const step = ref.kind === "live" ? planStepOf(ref.id) : null;
+  return `<section class="card" id="err-${hid(err.text.slice(0, 80))}" data-anim><div class="inline-err">${icon("alert")}<span><b>${esc(S.labels[ref.harness] || "The agent")} couldn't run this turn.</b> ${esc(err.text)}</span></div>
+    <p class="ctxl" style="margin:8px 0 0">${hint}</p>
+    <div class="qfoot"><button class="btn btn-text" data-act="term-open">Open the terminal</button><span class="sp"></span>${step && ref.harness !== "claude" && S.harnesses.claude ? `<button class="btn btn-tint" data-act="plan-rerun" data-id="${esc(ref.id)}">Run this step with Claude Code</button>` : ""}</div></section>`;
+}
+// The plan step a live session was started for, if any.
+function planStepOf(id) {
+  for (const plan of S.plans) { const i = (plan.started || []).indexOf(id); if (i >= 0) return { plan, i }; }
+  return null;
 }
 const TOOL_ICON = { Read: "file", Edit: "filepen", Write: "filepen", MultiEdit: "filepen", Bash: "term", PowerShell: "term", shell: "term", Grep: "search", Glob: "search", WebSearch: "globe", WebFetch: "globe", web_search: "globe", AskUserQuestion: "chat", Agent: "flow", Task: "flow", Skill: "spark" };
 function toolLine(t) {
@@ -340,13 +356,13 @@ function blockingCards(ref) {
   const l = ref.l; let h = "";
   if (l.terminalNeeds) {
     const n = l.terminalNeeds, k = n.kind;
-    const heading = k === "trust" ? "Trust this folder?" : k === "menu" ? "Waiting in the terminal" : "The terminal is waiting for you";
+    const heading = k === "trust" ? "Trust this folder?" : k === "hooks" ? "Trust this project's hooks?" : k === "menu" ? "Waiting in the terminal" : "The terminal is waiting for you";
     const actions = k === "menu"
       ? `<span class="sp"></span><button class="btn btn-tint" data-act="term-open">Open the terminal</button>`
-      : `<button class="btn btn-text" data-act="term-open">Open the terminal</button><button class="btn btn-text" data-act="term-no">${k === "trust" ? "Exit" : "No"}</button><span class="sp"></span><button class="btn btn-tint" data-act="term-yes">${k === "trust" ? "Trust and start" : "Yes"}</button>`;
+      : `<button class="btn btn-text" data-act="term-open">Open the terminal</button><button class="btn btn-text" data-act="term-no">${k === "trust" ? "Exit" : k === "hooks" ? "Skip them" : "No"}</button><span class="sp"></span><button class="btn btn-tint" data-act="term-yes">${k === "trust" ? "Trust and start" : k === "hooks" ? "Trust and continue" : "Yes"}</button>`;
     h += `<section class="card qcard" id="tn-${esc(l.id)}" data-anim><div class="eyebrow">${icon("term")}Terminal<span class="stat needs"><i></i>Needs you</span></div>
       <h3>${heading}</h3><p class="ctxl">${esc(n.text)}</p>
-      ${k === "trust" ? `<div class="qbody"><div class="draft mono" style="font-size:var(--fs-mono)">${esc(l.cwd)}</div></div>` : ""}
+      ${k === "trust" || (k === "hooks" && n.detail) ? `<div class="qbody"><div class="draft mono" style="font-size:var(--fs-mono);white-space:pre-wrap">${esc(k === "trust" ? l.cwd : n.detail)}</div></div>` : ""}
       <div class="qfoot">${actions}</div></section>`;
   }
   if (l.pendingPermission) {
@@ -625,7 +641,7 @@ function overviewHTML() {
     const action = !ns ? `${p.steps.length}/${p.steps.length}` : ns.harness === "you"
       ? `<button class="btn btn-neutral sm" data-act="plan-done" data-p="${pi}" data-i="${nextI}">Mark ${nextI + 1} done</button>`
       : `<button class="btn ${prevRunning ? "btn-neutral" : "btn-tint"} sm" data-act="plan-start" data-p="${pi}" data-i="${nextI}" ${S.inflight.has(`plan:${pi}:${nextI}`) ? "disabled" : ""} title="${prevRunning ? "The previous step is still running" : ""}">${prevRunning ? "Start anyway" : `Start ${nextI + 1}`}</button>`;
-    return `<div class="ovrow" id="pl-${pi}" style="cursor:default">
+    return `<div class="ovrow ovplan" id="pl-${pi}" style="cursor:default">
       <span class="ovt"><b>${esc(p.title)}</b><small>${esc(shortPath(p.cwd))} · plan</small></span>${hflow(steps, "run")}
       <span class="ovnow">${ns ? `Next: ${esc(ns.label)}${ns.harness === "you" ? " (yours)" : ""}` : "All steps done or started"}</span>
       <span class="ovm">${action}</span></div>`;
@@ -751,14 +767,21 @@ document.addEventListener("click", async (e) => {
       case "pick-folder": openPicker(el, S.ng.cwd || ""); break;
       case "pk-up": browse(S.picker.parent); break;
       case "pk-into": browse(S.picker.path.replace(/[\\/]+$/, "") + "\\" + el.dataset.d); break;
-      case "pk-use": S.ng.cwd = S.picker.path; closePicker(); render(); $("#ng-goal")?.focus(); break;
-      case "pk-pick": S.ng.cwd = el.dataset.p; closePicker(); render(); $("#ng-goal")?.focus(); break;
+      // "Use this folder" means the path in the box, typed or not yet browsed to.
+      case "pk-use": await chooseFolder(($("#pk-path")?.value || "").trim() || S.picker.path, el.dataset.sure === "1"); break;
+      case "pk-pick": await chooseFolder(el.dataset.p, false); break;
       case "ng-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); S.ng.harness = av[(av.indexOf(S.ng.harness) + 1) % av.length]; render(); break; }
       case "start-now": await startNow(); break;
       case "plan": await planIt(); break;
       case "plan-reset": S.ng.err = ""; render(); break;
       case "plan-go": await planGo(); break;
       case "plan-start": await startStep(S.plans[+el.dataset.p], +el.dataset.i, `plan:${el.dataset.p}:${el.dataset.i}`); break;
+      case "plan-rerun": {
+        const ps = planStepOf(el.dataset.id); if (!ps) break;
+        ps.plan.steps[ps.i] = { ...ps.plan.steps[ps.i], harness: "claude" }; savePlans();
+        await api(`/api/sessions/${el.dataset.id}/stop`, {}).catch(() => {});
+        await startStep(ps.plan, ps.i, `rerun:${el.dataset.id}`); break;
+      }
       case "plan-done": { const p = S.plans[+el.dataset.p]; p.done = p.done || []; p.done[+el.dataset.i] = true; savePlans(); render(); break; }
     }
   } catch (err) { toast(err.message, "", "fail"); }
@@ -983,6 +1006,8 @@ async function planGo() {
   const plan = { ...ng.plan, cwd: ng.cwd, answers: { ...ng.answers }, started: [], done: [], at: Date.now() };
   try {
     const first = plan.steps.findIndex((s) => s.harness !== "you");
+    // Your own steps before the first worker were settled by the answers you just gave.
+    for (let i = 0; i < first; i++) plan.done[i] = true;
     S.plans.unshift(plan); savePlans();
     await startStep(plan, first, "plan-go");
     S.ng = { goal: "", cwd: ng.cwd, plan: null, busy: false, err: "", answers: {}, startedAt: 0, harness: ng.harness, going: false };
@@ -1028,6 +1053,19 @@ async function browse(path) {
   }
 }
 function closePicker() { $(".picker")?.remove(); S.picker = null; }
+// Check a folder before using it: it must exist, and a folder that holds many projects (GitHub
+// itself) gets a warning first, because a plan or a worker started there guesses which project you meant.
+async function chooseFolder(p, sure) {
+  const r = await api(`/api/folders?path=${encodeURIComponent(p)}`);
+  if (!r.exists) { toast("That folder doesn't exist", p, "fail"); return; }
+  if (!sure && !r.project && r.dirs.length >= 8) {
+    await browse(r.path);
+    const pk = $(".picker"), name = shortPath(r.path);
+    pk?.querySelector(".pk-head")?.insertAdjacentHTML("afterend", `<div class="pk-warn" role="alert">${icon("alert")}<span><b>${esc(name)}</b> holds ${r.dirs.length} folders and isn't a project itself. Pick the project inside it.</span><button class="btn btn-text sm" data-act="pk-use" data-sure="1">Use it anyway</button></div>`);
+    return;
+  }
+  S.ng.cwd = r.path; closePicker(); render(); $("#ng-goal")?.focus();
+}
 
 // ---- Bits ---------------------------------------------------------------------
 // Two-step buttons: the first click arms (shown in the button itself), the second acts. Kept in state so renders don't drop it.

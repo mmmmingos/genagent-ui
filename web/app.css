@@ -518,3 +518,7 @@ pre.diff .add { color: var(--green-ink); display: block; }
 .picker { width: 460px; }
 
 .picker { overflow: auto; }
+.pk-warn { display: flex; align-items: center; gap: 8px; margin: 6px 10px; padding: 8px 10px; border-radius: 8px; background: var(--amber-tint); border: 1px solid var(--amber-ring); color: var(--text-1); font-size: var(--fs-small); }
+.pk-warn svg { color: var(--amber-dot); flex: none; }
+.pk-warn span { flex: 1; }
+.ovrow.ovplan { grid-template-columns: 220px minmax(0, 1fr) 200px max-content; }

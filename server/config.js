@@ -10,6 +10,7 @@ export const HOME = os.homedir();
 export const DATA = process.env.GENUI_DATA || path.join(HOME, ".genui-agent");
 export const PORT = Number(process.env.GENUI_PORT || 4317);
 export const HOST = "127.0.0.1";
+export const log = (...a) => { try { fs.mkdirSync(DATA, { recursive: true }); fs.appendFileSync(path.join(DATA, "server.log"), `[${new Date().toISOString()}] ${a.join(" ")}\n`); } catch {} };
 
 fs.mkdirSync(DATA, { recursive: true });
 

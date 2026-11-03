@@ -1,7 +1,7 @@
 // The orchestrator's planner: turn a goal into a flow of steps, each with a harness, and
 // predict what each step will need from the user or a teammate so those can be answered early.
 import fs from "node:fs";
-import { MODELS } from "./config.js";
+import { MODELS, log } from "./config.js";
 import { claudeCall } from "./claude-call.js";
 import { available } from "./harness.js";
 
@@ -23,6 +23,16 @@ const SCHEMA = {
 };
 
 export async function plan({ goal, cwd }) {
+  try { return await planOnce({ goal, cwd }); }
+  catch (e) {
+    // A transient failure (busy API, no valid structured answer) usually passes on a second try.
+    if (!e.transient) throw e;
+    log(`plan retry after: ${e.message} ${e.detail || ""}`);
+    return await planOnce({ goal, cwd });
+  }
+}
+
+async function planOnce({ goal, cwd }) {
   const have = available();
   const harnesses = Object.entries(have).filter(([, ok]) => ok).map(([k]) => k).join(", ");
   const r = await claudeCall({

@@ -5,7 +5,7 @@ import path from "node:path";
 import { STORES } from "./config.js";
 
 const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
-const isNoise = (t) => !t || /^\s*<[a-z_-]+>/i.test(t) || /^\s*<(system-reminder|user_info|environment_context|permissions|skills_instructions|collaboration_mode|local-command|command-|user_instructions)/i.test(t) || /^Caveat: The messages below/i.test(t);
+const isNoise = (t) => !t || /^\s*<[a-z_-]+>/i.test(t) || /^\s*<(system-reminder|user_info|environment_context|permissions|skills_instructions|collaboration_mode|local-command|command-|user_instructions)/i.test(t) || /^Caveat: The messages below/i.test(t) || /^# AGENTS\.md instructions for /.test(t);
 
 function readLines(file) {
   let raw;
@@ -94,14 +94,25 @@ export function parseClaude(lines) {
 }
 
 // ---- Codex --------------------------------------------------------------------
+// Codex wraps the API's error JSON in a string; dig out the human message and its code.
+function codexError(err) {
+  let message = String((err && err.message) || err || "Codex couldn't run this turn"), code = "";
+  try { const j = JSON.parse(message); const e = j.error || j; message = e.message || message; code = e.code || e.type || ""; } catch {}
+  return { message: clip(message, 400), code };
+}
 export function parseCodex(lines) {
   const events = [];
-  let cwd = "", id = "", context = null, model = "", turn = null, plan = null;
+  let cwd = "", id = "", context = null, model = "", turn = null, plan = null, turnError = null;
   for (const l of lines) {
     const p = l.payload || {};
     // Codex marks each turn's start and end explicitly; that beats guessing from silence.
-    if (l.type === "event_msg" && p.type === "task_started") turn = "running";
+    if (l.type === "event_msg" && p.type === "task_started") { turn = "running"; turnError = null; }
     if (l.type === "event_msg" && (p.type === "task_complete" || p.type === "turn_aborted")) turn = "done";
+    // A turn that failed (bad model, auth, quota) ends with an error and no reply: show it, never a silent "done".
+    if (l.type === "event_msg" && p.type === "task_complete" && p.error) {
+      turnError = codexError(p.error);
+      events.push({ role: "error", text: turnError.message, code: turnError.code, t: l.timestamp });
+    }
     if (l.type === "session_meta") { cwd = p.cwd || cwd; id = p.id || p.session_id || id; }
     if (l.type === "turn_context" && p.cwd) cwd = cwd || p.cwd;
     if (l.type === "event_msg" && p.type === "task_started" && p.model_context_window) context = { window: p.model_context_window, used: 0, pct: 0 };
@@ -127,7 +138,7 @@ export function parseCodex(lines) {
     if (l.type === "turn_context" && p.model) model = p.model;
   }
   const firstUser = events.find((e) => e.role === "user");
-  return { events, cwd, id, model, context, turn, plan, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
+  return { events, cwd, id, model, context, turn, turnError, plan, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
 }
 
 // ---- Grok ---------------------------------------------------------------------

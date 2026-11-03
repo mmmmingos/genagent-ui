@@ -46,7 +46,7 @@ export function summary(s) {
   const ask = s.asks[0], perm = s.perms[0];
   return {
     id: s.id, harness: s.harness, label: HARNESSES[s.harness].label, cwd: s.cwd, name: s.name, status: s.status,
-    file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin, goalHint: s.goalHint,
+    file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin, goalHint: s.goalHint, turnError: s.turnError || null,
     pendingAsk: ask ? { id: ask.id, questions: ask.questions } : null,
     pendingPermission: perm ? { id: perm.id, tool: perm.tool, input: perm.input } : null,
     queued: Math.max(0, s.asks.length - 1) + Math.max(0, s.perms.length - 1),
@@ -106,13 +106,31 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
 // Prompts that live only in the terminal (folder trust, yes/no) become a card. Claude Code reports
 // everything else through hooks, so its screen is only read until the first hook arrives, and only
 // the last few lines count, so an agent printing "(y/n)" in its reply doesn't trigger a card.
+function hookCommands(cwd) {
+  const out = [];
+  const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") { if (typeof v.command === "string") out.push(v.command); Object.values(v).forEach(walk); } };
+  try { walk(JSON.parse(fs.readFileSync(path.join(cwd, ".codex", "hooks.json"), "utf8"))); } catch {}
+  return [...new Set(out)].join("\n").slice(0, 400);
+}
+
 function sniffScreen(s) {
   if (s.harness === "claude" && s.hooked) return;
   clearTimeout(s.sniffTimer);
   s.sniffTimer = setTimeout(() => {
-    const tail = s.screen.slice(-700);
+    const tail = s.screen.slice(-700), flat = s.screen.slice(-2500).replace(/\s+/g, " ");
     let needs = null;
-    if (/trust this folder|Do you trust the (files|contents)|Is this a project you created or one you trust/i.test(tail)) needs = { kind: "trust", text: "The harness wants to know if you trust this folder before it starts." };
+    // An API error Codex prints instead of a reply (bad model, quota, sign-in): the turn is over.
+    if (s.harness === "codex") {
+      const m = /■ \{"type":"error".*?"message":"((?:[^"\\]|\\.)*)"(?:,"code":"([^"]*)")?/.exec(flat.slice(-1500));
+      if (m && (!s.turnError || s.turnError.message !== m[1])) { s.turnError = { message: m[1].slice(0, 400), code: m[2] || "" }; if (s.status === "working") s.status = "idle"; changed(s, "turn-end"); }
+    }
+    // Codex asks before running a project's own hooks (.codex/hooks.json): first as a menu, then per hook.
+    // Show the commands it would run, read from the project, since the menu doesn't list them.
+    const hooksMenu = /Hooks need review.*Continue without trusting.*Press enter to confirm or esc to go back\s*$/.test(flat);
+    if (s.harness === "codex" && (hooksMenu || /Press t to trust; esc to go back\s*$/.test(flat))) {
+      needs = { kind: "hooks", menu: hooksMenu, text: "This project has hooks (.codex/hooks.json) that Codex runs around its tools. Trust them, or carry on without them.", detail: hookCommands(s.cwd) };
+    }
+    else if (/trust this folder|Do you trust the (files|contents)|Is this a project you created or one you trust/i.test(tail)) needs = { kind: "trust", text: "The harness wants to know if you trust this folder before it starts." };
     else if (s.harness !== "claude" && /(Allow Codex to|approve this command|Would you like to run the following command)/i.test(tail.slice(-400))) needs = { kind: "approve", text: "The agent is asking for approval in its terminal." };
     else if (/(\(y\/n\)|\[y\/N\]|\[Y\/n\])\s*$/.test(tail.trimEnd())) needs = { kind: "yesno", text: "The terminal is waiting for a yes or no." };
     if (JSON.stringify(needs) !== JSON.stringify(s.terminalNeeds)) { s.terminalNeeds = needs; if (needs) s.status = "needs"; changed(s); }
@@ -180,8 +198,8 @@ function watch(s) {
         bus.emit("transcript", s.id, parsed);
         // Codex writes explicit turn markers; Grok has none, so a long silence ends its turn.
         if (s.harness === "codex" && s.alive && parsed.turn) {
-          if (parsed.turn === "running" && s.status !== "working") { s.status = "working"; s.terminalNeeds = null; changed(s); }
-          if (parsed.turn === "done" && (s.status === "working" || s.status === "starting") && grew) { s.status = "idle"; changed(s, "turn-end"); }
+          if (parsed.turn === "running" && s.status !== "working") { s.status = "working"; s.terminalNeeds = null; s.turnError = null; changed(s); }
+          if (parsed.turn === "done" && (s.status === "working" || s.status === "starting") && grew) { s.status = "idle"; s.turnError = parsed.turnError; changed(s, "turn-end"); }
         } else if (s.harness === "grok" && grew && s.alive) {
           if (s.status !== "working") { s.status = "working"; s.terminalNeeds = null; changed(s); }
           clearTimeout(s.quietTimer);
@@ -316,5 +334,7 @@ export function answerTerminal(id, choice) {
   if (k === "trust") s.pty.write(choice === "yes" ? (s.harness === "claude" ? "\x1b[B\r" : "\r") : "\x1b");
   else if (k === "yesno") s.pty.write(choice === "yes" ? "y\r" : "n\r");
   else if (k === "approve") s.pty.write(choice === "yes" ? "\r" : "\x1b");
+  // Codex's hooks menu: 1 review, 2 trust all and continue, 3 continue without them. Its detail screen takes t or esc.
+  else if (k === "hooks") s.pty.write(s.terminalNeeds.menu ? (choice === "yes" ? "\x1b[B\r" : "\x1b[B\x1b[B\r") : choice === "yes" ? "t" : "\x1b");
   s.terminalNeeds = null; s.status = "working"; s.screen = ""; changed(s);
 }

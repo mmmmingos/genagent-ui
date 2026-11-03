@@ -66,16 +66,22 @@ try {
   await clickSel(`.picker .pk-item[data-act=pk-pick][data-p$=${JSON.stringify(path.basename(TARGET))}]`);
   check("clicking a folder chooses it", await waitFor(`!document.querySelector('.picker') && (document.querySelector('#ng-folder')||{}).textContent?.includes(${JSON.stringify(path.basename(TARGET))})`, 5000));
   await shot("ng-04-folder-set");
-  // The path box: paste a path, Enter, and it browses there.
+  // The path box: a folder of projects (GitHub) warns instead of being used.
+  const GITHUB = path.join(os.homedir(), "Documents", "GitHub");
+  const typePath = async (p) => { await ev(`(()=>{const i=document.getElementById('pk-path'); i.focus(); i.select();})()`); await typeText(p); };
   await clickSel("#ng-folder");
   await waitFor(`!!document.getElementById('pk-path')`, 8000);
-  await ev(`(()=>{const i=document.getElementById('pk-path'); i.focus(); i.select();})()`);
-  await typeText(TARGET);
+  await typePath(GITHUB);
+  await clickSel(".picker .pk-head [data-act=pk-use]");
+  check("a folder of projects warns instead of being used", await waitFor(`!!document.querySelector('.pk-warn')`, 5000) && (await ev(`!document.querySelector('#ng-folder').textContent.includes('GitHub')`)));
+  // Paste a path and press Use this folder straight away, no Enter: the typed path is used.
+  await typePath(path.join(ROOT, "sandbox"));
   await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  check("typing a path browses there", await waitFor(`(document.getElementById('pk-path')||{}).value === ${JSON.stringify(TARGET)}`, 8000));
-  await clickSel(".picker [data-act=pk-use]");
-  check("Use this folder works", await waitFor(`!document.querySelector('.picker')`, 5000));
+  check("Enter in the path box browses there", await waitFor(`!!document.querySelector('.picker .pk-open[data-d=${JSON.stringify(path.basename(TARGET))}]')`, 8000));
+  await typePath(TARGET);
+  await clickSel(".picker .pk-head [data-act=pk-use]");
+  check("a typed path is used without pressing Enter", await waitFor(`!document.querySelector('.picker') && (document.querySelector('#ng-folder')||{}).textContent?.includes(${JSON.stringify(path.basename(TARGET))})`, 5000));
   // Type a goal, press Start now
   await clickSel("#ng-goal");
   await typeText("Reply with exactly: STARTED_FROM_UI");

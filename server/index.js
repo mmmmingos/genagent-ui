@@ -7,7 +7,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { WebSocketServer } from "ws";
-import { ROOT, DATA, PORT, HOST, TOKEN, hookSecret, safeEqual, ID_RE } from "./config.js";
+import { ROOT, DATA, PORT, HOST, TOKEN, hookSecret, safeEqual, ID_RE, log } from "./config.js";
 import * as live from "./live.js";
 import { listSaved, readSession } from "./transcripts.js";
 import { generate, cached } from "./genui.js";
@@ -20,7 +20,6 @@ const MOD = path.join(ROOT, "node_modules");
 const ORIGIN = `http://${HOST}:${PORT}`;
 const HOSTPORT = `${HOST}:${PORT}`;
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
-const log = (...a) => fs.appendFileSync(path.join(DATA, "server.log"), `[${new Date().toISOString()}] ${a.join(" ")}\n`);
 
 // The window's credential is minted per launch, so the long-lived install token never sits in a cookie.
 const WINDOW_SECRET = crypto.randomBytes(24).toString("hex");
@@ -170,12 +169,14 @@ const server = http.createServer(async (req, res) => {
       const base = url.searchParams.get("path") || path.join(process.env.USERPROFILE || "", "Documents", "GitHub");
       let dirs = [], exists = false;
       try { exists = fs.statSync(base).isDirectory(); dirs = fs.readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".") && d.name !== "node_modules").map((d) => d.name).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).slice(0, 400); } catch {}
-      return json(res, 200, { path: path.resolve(base), parent: path.dirname(path.resolve(base)), dirs, exists });
+      // A project folder has its own repo or manifest; a folder of projects (like GitHub) doesn't.
+      const project = exists && [".git", "package.json", "pyproject.toml", "go.mod", "Cargo.toml", "CLAUDE.md", "AGENTS.md"].some((f) => fs.existsSync(path.join(base, f)));
+      return json(res, 200, { path: path.resolve(base), parent: path.dirname(path.resolve(base)), dirs, exists, project });
     }
     if (p === "/api/quit" && req.method === "POST") { json(res, 200, { ok: true }); setTimeout(shutdown, 200); return; }
     return json(res, 404, { error: "Unknown endpoint" });
   } catch (e) {
-    log("error", p, e.stack || e.message);
+    log("error", p, e.stack || e.message, e.detail || "");
     return json(res, e.message === "Bad id" ? 400 : 500, { error: e.message });
   }
 });

@@ -109,3 +109,18 @@ test("a reworded finished step is not duplicated", () => {
   assert.equal(m[0].label, "Step 1: create step-1.txt");
   assert.ok(m.some((s) => /step-3/.test(s.label)));
 });
+
+test("Codex: a failed turn surfaces its error, and a new turn clears it", () => {
+  const apiErr = JSON.stringify({ type: "error", status: 400, error: { type: "invalid_request_error", message: "The 'x' model is not supported.", code: "model_not_found" } });
+  const lines = [
+    { type: "session_meta", payload: { id: "s1", cwd: "C:\proj" } },
+    { type: "event_msg", payload: { type: "task_started" } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ text: "Do it" }] } },
+    { type: "event_msg", timestamp: "t2", payload: { type: "task_complete", last_agent_message: null, error: { message: apiErr } } },
+  ];
+  const p = parseCodex(lines);
+  assert.equal(p.turn, "done");
+  assert.deepEqual(p.turnError, { message: "The 'x' model is not supported.", code: "model_not_found" });
+  assert.equal(p.events.at(-1).role, "error");
+  assert.equal(parseCodex([...lines, { type: "event_msg", payload: { type: "task_started" } }]).turnError, null);
+});

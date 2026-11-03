@@ -9,6 +9,13 @@ const LANES = { gen: { max: 2, running: 0, queue: [] }, agent: { max: 3, running
 function slot(lane) { const L = LANES[lane]; return new Promise((res) => { if (L.running < L.max) { L.running++; res(); } else L.queue.push(res); }); }
 function release(lane) { const L = LANES[lane]; L.running--; const n = L.queue.shift(); if (n) { L.running++; n(); } }
 
+// What claude -p's error subtypes mean, in words the owner can act on.
+const SUBTYPES = {
+  error_max_turns: "Claude ran out of turns before finishing",
+  error_during_execution: "Claude hit an error while working (often a busy API). Try again",
+  error_max_structured_output_retries: "Claude couldn't produce a valid answer. Try again",
+};
+
 // opts: { prompt, stdin, model, schema, system, appendSystem, lean, tools, resume, fork, sessionId, cwd,
 //         addDirs, userSettingsOnly, noPersist, lane, onChild, timeoutMs }
 export async function claudeCall(opts) {
@@ -51,7 +58,13 @@ export async function claudeCall(opts) {
         let j = null;
         try { j = JSON.parse(out.trim().split("\n").pop()); } catch {}
         if (!j) return reject(new Error((err || out || `claude exited ${code}`).slice(0, 400)));
-        if (j.is_error) return reject(new Error(String(j.result || j.api_error_status || "Claude returned an error").slice(0, 400)));
+        if (j.is_error || /^error/.test(j.subtype || "")) {
+          const why = j.result || (j.errors || []).join("; ") || (j.api_error_status && `API error ${j.api_error_status}`) || SUBTYPES[j.subtype] || `Claude returned an error (${j.subtype || `exit ${code}`})`;
+          const e = new Error(String(why).slice(0, 400));
+          e.subtype = j.subtype; e.transient = !j.result || !!j.api_error_status;
+          e.detail = JSON.stringify({ subtype: j.subtype, api: j.api_error_status, turns: j.num_turns, errors: j.errors, stderr: err.slice(-600) });
+          return reject(e);
+        }
         const u = j.usage || {};
         resolve({
           result: j.result, data: j.structured_output ?? null, sessionId: j.session_id, cost: j.total_cost_usd || 0,
