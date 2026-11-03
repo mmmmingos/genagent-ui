@@ -11,7 +11,7 @@
     "setup": "node scripts/install.mjs",
     "test:e2e": "node tests/e2e-backend.mjs",
     "test:flow": "node tests/e2e-flow.mjs",
-    "test:ui": "node tests/ui-drive.mjs && node tests/ui-newgoal.mjs"
+    "test:ui": "node tests/ui-agent.mjs && node tests/ui-drive.mjs && node tests/ui-newgoal.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -20,6 +20,7 @@
     "@lydell/node-pty": "^1.2.0-beta.18",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
     "morphdom": "^2.7.8",
     "ws": "^8.22.1"

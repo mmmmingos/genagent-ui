@@ -124,8 +124,11 @@ function render() {
   if (S.page === "overview") morph(view, overviewHTML());
   else if (S.page === "new") morph(view, newGoalHTML());
   else { const ref = current(); if (!ref) { S.page = "overview"; return render(); } morph(view, sessionHTML(ref)); }
+  // A running session is its terminal with the plan rail beside it; the side chat lives in that rail.
+  const agent = S.page === "session" && S.sel?.kind === "live";
+  $(".main").classList.toggle("agent", agent);
   renderTerm();
-  const sd = curSide();
+  const sd = agent ? null : curSide();
   morph($("#panel"), sd ? sideChatHTML(sd) : "");
   $("#panel").hidden = !sd;
   autosizeAll();
@@ -210,8 +213,121 @@ function sideHTML() {
     ${groups.length ? groups.map(([name, items]) => `<div class="sgroup">${name}</div>${items.map(savedRow).join("")}`).join("") : `<div class="sgroup">Recent</div><div class="sempty">${q ? "Nothing matches." : "No sessions yet"}</div>`}`;
 }
 
+// ---- Agent view: the real terminal, with the plan beside it -----------------------------------
+// A running session looks like the harness itself; the rail adds where the plan stands, what the
+// agent is doing, and what it needs. Questions and approvals stay in the harness's own menus.
+function agentHTML(ref) {
+  const g = genFor(ref.file), l = ref.l, st = ref.state;
+  const name = (g && g.title) || title(l);
+  const ps = planStepOf(ref.id);
+  const meta = [esc(shortPath(ref.cwd)), esc(S.labels[ref.harness])];
+  if (ps) meta.push(`plan step ${ps.i + 1} of ${ps.plan.steps.length}`);
+  const hdot = st === "run" ? "var(--accent-dot)" : st === "needs" ? "var(--amber-dot)" : "";
+  const sd = curSide();
+  return `
+  <header class="head">
+    <div class="head-t" title="${esc(g ? g.goal : "")}">${hdot ? `<span class="hdot" style="background:${hdot}"></span>` : ""}<span>${esc(name)}</span></div>
+    <div class="head-meta">${meta.join(" · ")}</div>
+    <div class="head-r">
+      <button class="ibtn ${sd ? "is-on" : ""} ${S.sides.has(refKey(ref)) ? "has-badge" : ""}" data-act="side-toggle" title="Side chat: talk something through without touching the session" aria-label="Side chat">${icon("chat")}</button>
+      ${l.alive ? `<button class="ibtn ${S.armed?.act?.startsWith("stop-session:") ? "armed" : ""}" data-act="stop-session" title="${S.armed?.act?.startsWith("stop-session:") ? "Click again to stop this session" : "Stop this session"}" aria-label="Stop session">${icon("power")}</button>` : ""}
+    </div>
+  </header>
+  <aside class="railpane" id="railpane" aria-label="${sd ? "Side chat" : "Plan"}">${sd ? sideChatHTML(sd) : railHTML(ref, g, ps)}</aside>`;
+}
+
+// What the agent is doing right now, from its latest tool call.
+function activity(ref) {
+  const ev = ref.events || [];
+  for (let i = ev.length - 1; i >= 0; i--) {
+    const e = ev[i];
+    if (e.role === "user") break;
+    if (e.role === "tool") {
+      const x = e.input || {}, f = shortPath(x.file_path || x.path || "");
+      const verb = { Read: "Reading", Edit: "Editing", MultiEdit: "Editing", Write: "Writing", Grep: "Searching", Glob: "Searching", WebSearch: "Searching the web", WebFetch: "Reading a page", Bash: "Running", PowerShell: "Running", shell: "Running", Agent: "Delegating", Task: "Delegating" }[e.tool] || `Using ${e.tool}`;
+      const what = f || (x.command ? clip(String(x.command).split("\n")[0], 40) : x.pattern || x.query || "");
+      return what ? `${verb} ${what}` : verb;
+    }
+  }
+  return "";
+}
+
+// One line saying what the agent needs from you, or "" when it needs nothing.
+function needLine(ref, g) {
+  const l = ref.l;
+  if (l.pendingAsk) { const qs = l.pendingAsk.questions || []; return qs.length > 1 ? `${qs.length} questions for you` : `Asking: ${(qs[0] || {}).question || "a question"}`; }
+  if (l.pendingPermission) return `Wants to ${permTitle(l.pendingPermission.tool, l.pendingPermission.input || {}).replace(/^\w/, (c) => c.toLowerCase())}`;
+  if (l.native) return "Waiting in its terminal";
+  if (l.terminalNeeds) return l.terminalNeeds.kind === "trust" ? "Trust this folder?" : l.terminalNeeds.kind === "hooks" ? "Trust this project's hooks?" : "Waiting in its terminal";
+  if (l.turnError) return "Couldn't run this turn";
+  const n = openCards(ref.file, g).length + (S.carried.get(ref.file) || []).length;
+  return n ? `${plural(n, "question")} in its reply` : "";
+}
+
+function railHTML(ref, g, ps) {
+  const l = ref.l, st = ref.state;
+  const tone = st === "needs" ? "needs" : st === "run" || st === "reading" ? "run" : st === "done" ? "done" : "idle";
+  const own = (ref.plan && ref.plan.length ? ref.plan.map((p) => ({ label: p.label, state: p.state })) : (g && g.steps) || []);
+  const need = st === "needs" ? needLine(ref, g) : "";
+  const open = S.open.has("attn:" + ref.id) || S.open.has("attn-all");
+  // The line under the current step: what it's doing, or what it needs (click to answer).
+  const nowLine = need
+    ? `<button class="pl-now needs" data-act="attn" aria-expanded="${open}">${icon("alert", "s14")}<span>${esc(clip(need, 90))}</span>${icon(open ? "chevd" : "chev", "s12")}</button>`
+    : `<div class="pl-now ${tone}">${tone === "run" ? `<span class="spin"></span><span class="shimmer">${esc(activity(ref) || (st === "reading" ? "Reading the reply" : "Working"))}</span>` : esc(!l.alive ? "Session ended" : tone === "done" ? "Done. Your turn" : "Your turn. Type in the terminal")}</div>`;
+  const attn = need && open ? `<div class="attn" id="attn-${esc(ref.id)}" data-anim>${attnHTML(ref, g)}</div>` : "";
+  const sub = (steps) => steps.length ? `<ol class="pl-sub">${steps.map((s, i) => `<li class="pl-s ${s.state}${s.state === "current" ? " " + tone : ""}" id="pls-${hid(i + s.label)}"><span class="pl-sd"></span><span>${esc(s.label)}</span></li>`).join("")}</ol>` : "";
+  const row = (label, state, who, extra, k) => `<li class="pl-row ${state}${state === "current" ? " " + tone : ""}" id="plr-${hid(k + label)}"><span class="pl-dot"></span><div class="pl-body"><div class="pl-label"><span>${esc(label)}</span>${who ? `<span class="pl-who">${esc(who)}</span>` : ""}</div>${extra || ""}</div></li>`;
+  let head, rows;
+  if (ps) {
+    const p = ps.plan, started = p.started || [], done = p.done || [];
+    head = `<div class="pl-eyebrow">${icon("flow", "s14")}Plan<span class="pl-count">step ${ps.i + 1} of ${p.steps.length}</span></div><h3 class="pl-title">${esc(p.title)}</h3>`;
+    rows = p.steps.map((s, i) => {
+      const state = i === ps.i ? "current" : done[i] ? "done" : started[i] ? (S.live.get(started[i])?.alive ? "other" : "done") : "next";
+      const who = s.harness === "you" ? "You" : engShort(s.harness);
+      return row(s.label, state, who, i === ps.i ? nowLine + attn + sub(own) : "", i);
+    }).join("");
+  } else {
+    const cur = own.findIndex((s) => s.state === "current");
+    head = `<div class="pl-eyebrow">${icon("flow", "s14")}Flow${own.length ? `<span class="pl-count">${cur >= 0 ? `step ${cur + 1} of ${own.length}` : `${own.filter((s) => s.state === "done").length} of ${own.length} done`}</span>` : ""}</div><h3 class="pl-title">${esc((g && g.title) || title(l))}</h3>${g && g.goal ? `<p class="pl-goal">${esc(g.goal)}</p>` : ""}`;
+    // The current step carries the live line; with no current step it sits after the last one.
+    rows = own.map((s, i) => row(s.label, s.state, "", s.state === "current" ? nowLine + attn : "", i)).join("");
+    if (cur < 0) rows += row(own.length ? "Now" : clip(l.goalHint || "Starting", 60), "current", "", nowLine + attn, "now");
+  }
+  const ctx = ref.context;
+  return `<div class="pl-scroll">${head}<ol class="pl">${rows}</ol></div>
+    <div class="pl-foot">${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
+      ${!l.alive && ref.harness === "claude" ? `<span class="sp"></span><button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
+}
+
+// What the agent needs, opened from its step: its question (answered in the terminal, or worked
+// out in a side chat), an approval, a terminal prompt, an error, or questions read from its reply.
+function attnHTML(ref, g) {
+  const l = ref.l;
+  if (l.pendingAsk) {
+    const qs = l.pendingAsk.questions || [];
+    return qs.map((q, qi) => `<div class="at-q">
+      ${qs.length > 1 ? `<div class="at-h">${esc(q.header || `Question ${qi + 1}`)}</div>` : ""}<div class="at-qt">${esc(q.question)}</div>
+      <div class="at-opts">${(q.options || []).map((o, j) => `<span class="at-o" title="${esc(o.description || "")}"><span class="num">${j + 1}</span>${esc(o.label)}</span>`).join("")}</div>
+      <div class="at-act"><button class="btn btn-tint sm" data-act="discuss-ask" data-qi="${qi}">${icon("chat", "s14")}Discuss it</button><span class="t3">or pick it in the terminal</span></div></div>`).join("");
+  }
+  if (l.pendingPermission) {
+    const p = l.pendingPermission, i = p.input || {}, cmd = i.command || i.file_path || i.url || i.pattern || "";
+    return `<div class="at-q"><div class="at-qt">${esc(permTitle(p.tool, i))}?</div>${cmd ? `<pre class="code">${esc(clip(String(cmd), 400))}</pre>` : ""}<div class="at-act"><button class="btn btn-tint sm" data-act="term-open">${icon("term", "s14")}Answer in the terminal</button></div></div>`;
+  }
+  if (l.native) return `<div class="at-q"><div class="at-qt">The terminal is waiting for you.</div><div class="at-act"><button class="btn btn-tint sm" data-act="term-open">${icon("term", "s14")}Go to the terminal</button></div></div>`;
+  if (l.terminalNeeds) {
+    const n = l.terminalNeeds, k = n.kind;
+    return `<div class="at-q"><div class="at-qt">${esc(n.text)}</div>${k === "trust" || (k === "hooks" && n.detail) ? `<pre class="code">${esc(k === "trust" ? l.cwd : n.detail)}</pre>` : ""}
+      <div class="at-act">${k === "menu" ? `<button class="btn btn-tint sm" data-act="term-open">Go to the terminal</button>` : `<button class="btn btn-tint sm" data-act="term-yes">${k === "trust" ? "Trust and start" : k === "hooks" ? "Trust and continue" : "Yes"}</button><button class="btn btn-text sm" data-act="term-no">${k === "trust" ? "Exit" : k === "hooks" ? "Skip them" : "No"}</button>`}</div></div>`;
+  }
+  const err = (ref.events || []).slice().reverse().find((e) => e.role === "error") || (l.turnError ? { text: l.turnError.message, code: l.turnError.code } : null);
+  if (err) return errorCard(ref, err);
+  return `${genCards(ref, g)}${answerBar(ref, g)}`;
+}
+
 // ---- Session view ---------------------------------------------------------------------
 function sessionHTML(ref) {
+  if (ref.kind === "live") return agentHTML(ref);
   const g = genFor(ref.file);
   const name = (g && g.title) || (ref.kind === "live" ? title(ref.l) : ref.title) || "Session";
   const st = ref.kind === "live" ? ref.state : null;
@@ -353,71 +469,9 @@ function blockingCards(ref) {
     const q = (ref.pendingAsk.questions || [])[0] || {};
     return `<section class="card qcard" id="saved-ask"><div class="eyebrow">${icon("chat")}Question<span class="stat needs"><i></i>Was waiting</span></div><h3>${esc(q.question || "Open question")}</h3><p class="ctxl">This saved session ended while the agent was asking this. Resume it in a terminal to answer.</p></section>`;
   }
-  const l = ref.l; let h = "";
-  if (l.terminalNeeds) {
-    const n = l.terminalNeeds, k = n.kind;
-    const heading = k === "trust" ? "Trust this folder?" : k === "hooks" ? "Trust this project's hooks?" : k === "menu" ? "Waiting in the terminal" : "The terminal is waiting for you";
-    const actions = k === "menu"
-      ? `<span class="sp"></span><button class="btn btn-tint" data-act="term-open">Open the terminal</button>`
-      : `<button class="btn btn-text" data-act="term-open">Open the terminal</button><button class="btn btn-text" data-act="term-no">${k === "trust" ? "Exit" : k === "hooks" ? "Skip them" : "No"}</button><span class="sp"></span><button class="btn btn-tint" data-act="term-yes">${k === "trust" ? "Trust and start" : k === "hooks" ? "Trust and continue" : "Yes"}</button>`;
-    h += `<section class="card qcard" id="tn-${esc(l.id)}" data-anim><div class="eyebrow">${icon("term")}Terminal<span class="stat needs"><i></i>Needs you</span></div>
-      <h3>${heading}</h3><p class="ctxl">${esc(n.text)}</p>
-      ${k === "trust" || (k === "hooks" && n.detail) ? `<div class="qbody"><div class="draft mono" style="font-size:var(--fs-mono);white-space:pre-wrap">${esc(k === "trust" ? l.cwd : n.detail)}</div></div>` : ""}
-      <div class="qfoot">${actions}</div></section>`;
-  }
-  if (l.pendingPermission) {
-    const p = l.pendingPermission, i = p.input || {};
-    if (!S.permShown.has(p.id)) S.permShown.set(p.id, Date.now());
-    const isEdit = ["Edit", "Write", "MultiEdit"].includes(p.tool) && (i.old_string != null || i.content != null || Array.isArray(i.edits));
-    const cmd = i.command || i.url || i.pattern || "";
-    const risky = /\b(rm|del|rmdir|push|deploy|drop|reset\s+--hard|publish|curl|wget|iwr|Invoke-WebRequest)\b|[;&|]|\$\(/i.test(String(cmd));
-    const detail = isEdit
-      ? `<div class="pd">${esc(i.file_path || "")}</div>${i.old_string != null ? `<pre class="code diff"><span class="del">${esc(i.old_string)}</span>\n<span class="add">${esc(i.new_string || "")}</span></pre>` : i.content != null ? `<pre class="code">${esc(i.content)}</pre>` : (i.edits || []).map((e) => `<pre class="code diff"><span class="del">${esc(e.old_string)}</span>\n<span class="add">${esc(e.new_string)}</span></pre>`).join("")}`
-      : `<pre class="code">${esc(cmd && !/Edit|Write/.test(p.tool) ? cmd : JSON.stringify(i, null, 2))}</pre>`;
-    h += `<section class="card qcard" id="perm-${esc(p.id)}" data-anim><div class="eyebrow">${icon("shield")}Approval<span class="stat needs"><i></i>Needs you</span></div>
-      <h3>${esc(permTitle(p.tool, i))}?</h3>${risky ? `<p class="ctxl" style="color:var(--amber-ink)">This command can delete, publish, download or chain other commands. Read all of it.</p>` : ""}
-      <div class="qbody permbody">${detail}</div>
-      <div class="qfoot"><button class="btn btn-text" data-act="perm-deny" data-qid="${esc(p.id)}">Deny</button><button class="btn btn-text" data-act="perm-term" data-qid="${esc(p.id)}">Decide in the terminal</button><span class="sp"></span>${l.queued ? `<span class="t3" style="font-size:var(--fs-meta)">${l.queued} more waiting</span>` : ""}<button class="btn btn-tint" data-act="perm-allow" data-qid="${esc(p.id)}">Allow</button></div></section>`;
-  }
-  if (l.pendingAsk) h += askCard(l);
-  return h;
+  return "";
 }
 const permTitle = (tool, i) => ({ Bash: "Run this command", PowerShell: "Run this command", Edit: `Edit ${shortPath(i.file_path)}`, MultiEdit: `Edit ${shortPath(i.file_path)}`, Write: `Write ${shortPath(i.file_path)}`, WebFetch: "Fetch this page", Read: `Read ${shortPath(i.file_path)}` }[tool] || `Use ${tool}`);
-
-function askCard(l) {
-  const a = l.pendingAsk, qs = a.questions || [];
-  const st = askState(a);
-  const qi = Math.min(st.step, qs.length - 1), q = qs[qi] || { options: [] };
-  const multi = !!q.multiSelect;
-  const opts = (q.options || []).map((o, j) => {
-    const on = st.picks[qi].has(j);
-    return `<button class="opt ${on ? "is-on" : ""}" data-act="ask-pick" data-ask="${esc(a.id)}" data-j="${j}" role="${multi ? "checkbox" : "radio"}" aria-checked="${on}" ${st.sending ? "disabled" : ""}>
-      ${multi ? `<span class="box">${on ? icon("check") : ""}</span>` : ""}<span class="op"><span class="ot">${esc(o.label)}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ""}</span>
-      ${!multi ? icon("check", "ock") : ""}</button>`;
-  }).join("");
-  const elseRow = st.elseOpen[qi]
-    ? `<div class="field"><input data-keep id="ask-else-${esc(a.id)}-${qi}" placeholder="Your answer" aria-label="Your own answer" data-act-input="ask-else" data-ask="${esc(a.id)}"><button class="enterkey ${st.other[qi] ? "ready" : ""}" data-act="ask-else-send" data-ask="${esc(a.id)}" aria-label="Use this answer">${icon("enter")}</button></div>`
-    : `<button class="opt else" data-act="ask-else-open" data-ask="${esc(a.id)}" ${st.sending ? "disabled" : ""}><span class="op"><span class="ot">Something else</span></span></button>`;
-  const left = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
-  return `<section class="card qcard" id="ask-${esc(a.id)}" data-anim>
-    <div class="eyebrow">${icon("chat")}${esc(q.header || "Question")}<span class="tag" title="The agent asked this directly. Your pick goes straight to it.">Asked directly</span><span class="stat needs"><i></i>${st.sending ? "Sending" : "Needs you"}</span></div>
-    <h3>${esc(q.question)}</h3>
-    <div class="qbody"><div class="opts">${opts}${elseRow}</div></div>
-    <div class="qfoot">
-      ${st.step > 0 && !st.sending ? `<button class="btn btn-text" data-act="ask-back" data-ask="${esc(a.id)}">${icon("back", "s14")}Back</button>` : `<button class="btn btn-text" data-act="ask-discuss" data-ask="${esc(a.id)}">Discuss it</button>`}
-      <button class="btn btn-text" data-act="ask-term" data-ask="${esc(a.id)}">Answer in the terminal</button><span class="sp"></span>
-      ${qs.length > 1 ? `<span class="stepper">${qs.map((_, k) => `<i class="${k < qi ? "done" : k === qi ? "cur" : ""}"></i>`).join("")}</span><span class="sp"></span>` : ""}
-      ${st.until ? `<span class="t2 num" style="font-size:var(--fs-meta)">Sending in ${left}s</span><button class="btn btn-neutral" data-act="ask-undo" data-ask="${esc(a.id)}">Undo</button>`
-        : st.sending ? `<button class="btn btn-busy" aria-busy="true"><span class="spin"></span>Sending</button>`
-        : multi ? `<button class="btn btn-tint" data-act="ask-continue" data-ask="${esc(a.id)}" ${st.picks[qi].size ? "" : "disabled"}>${qi < qs.length - 1 ? "Next" : "Send"}${st.picks[qi].size ? ` (${st.picks[qi].size})` : ""}</button>` : ""}
-    </div>
-  </section>`;
-}
-function askState(a) {
-  let st = S.ask.get(a.id);
-  if (!st) { const qs = a.questions || []; st = { step: 0, picks: qs.map(() => new Set()), other: qs.map(() => ""), elseOpen: qs.map(() => false), sending: false, timer: 0, until: 0 }; S.ask.set(a.id, st); }
-  return st;
-}
 
 const KIND = { choice: ["choice", "Choice"], approve: ["shield", "Approval"], input: ["edit", "Answer"], teammate: ["user", "Teammate"], checklist: ["list", "Checklist"], info: ["info", "Note"] };
 function genCards(ref, g) {
@@ -504,42 +558,29 @@ function chips(ref, g) {
   return `<div class="chips">${out.join("")}</div>`;
 }
 
-function composer(ref, g) {
-  if (ref.kind === "saved") {
-    const active = Date.now() - (ref.mtime || 0) < 120000;
-    const act = active ? "fork" : "resume";
-    const armedNow = S.armed?.act?.startsWith(act + ":");
-    return `<div class="dock-note">${icon("eye")}<span>${active ? "This session is active somewhere else right now. Shown read-only." : "A saved session, shown read-only."}</span><button class="btn ${armedNow ? "btn-tint" : "btn-text"}" data-act="${act}" id="resume-btn">${armedNow ? (active ? "Click again: start a copy here" : "Click again: continue it here") : active ? "Fork it into a new session here" : "Resume it in a terminal"}</button></div>`;
-  }
-  if (!ref.alive) return `<div class="dock-note"><span>This session has ended${ref.l.exitCode ? ` (exit code ${ref.l.exitCode})` : ""}.</span>${ref.harness === "claude" ? `<button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
-  const l = ref.l, working = ref.state === "run";
-  const hasCards = openCards(ref.file, g).length > 0;
-  const ph = l.pendingPermission ? "Answer the approval above first" : l.pendingAsk ? "Type your own answer to the question above" : hasCards ? `Message ${S.labels[ref.harness]} (separate from the answers above)` : `Reply to ${S.labels[ref.harness]}`;
-  return `<div class="composer">
-    <textarea id="compose-${esc(ref.id)}" class="compose" data-keep data-draft="compose:${esc(ref.id)}" rows="2" placeholder="${esc(ph)}" aria-label="Message the session" ${l.pendingPermission ? "disabled" : ""}></textarea>
-    <div class="tbar"><span class="pill" title="${esc(ref.cwd)}">${icon("folder")}<span>${esc(shortPath(ref.cwd))}</span></span><span class="eng-label">${esc(S.labels[ref.harness])}</span><span class="sp"></span>
-      ${working ? `<button class="send stop" data-act="interrupt" title="Interrupt (Esc). Enter still queues a message." aria-label="Interrupt"><i></i></button>` : `<button class="send" data-act="compose-send" aria-label="Send">${icon("up")}</button>`}</div></div>`;
+// Saved sessions are read-only here: offer to resume or fork them into a live session.
+function composer(ref) {
+  const active = Date.now() - (ref.mtime || 0) < 120000;
+  const act = active ? "fork" : "resume";
+  const armedNow = S.armed?.act?.startsWith(act + ":");
+  return `<div class="dock-note">${icon("eye")}<span>${active ? "This session is active somewhere else right now. Shown read-only." : "A saved session, shown read-only."}</span><button class="btn ${armedNow ? "btn-tint" : "btn-text"}" data-act="${act}" id="resume-btn">${armedNow ? (active ? "Click again: start a copy here" : "Click again: continue it here") : active ? "Fork it into a new session here" : "Resume it in a terminal"}</button></div>`;
 }
 
 // ---- Terminal (3.10) ---------------------------------------------------------------------
 function renderTerm() {
   const wrap = $("#termwrap");
   const ref = S.page === "session" ? current() : null;
-  const show = !!(ref && ref.kind === "live" && S.tab === "terminal");
+  const show = !!(ref && ref.kind === "live");
   wrap.hidden = !show;
   if (!show) return;
   const l = ref.l;
-  morph($("#tstrip"), `${icon("term")}<b>Terminal</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span><span class="sp"></span>
-    ${l.pendingAsk || l.pendingPermission ? `<button class="btn btn-text" data-act="tab" data-tab="flow" style="color:var(--amber-ink)">${l.pendingAsk ? "A question is waiting in Flow" : "An approval is waiting in Flow"}</button>` : ""}
+  morph($("#tstrip"), `${icon("term")}<b>${esc(S.labels[l.harness])}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span><span class="sp"></span>
     ${l.alive ? `<button class="btn btn-text" data-act="term-int">Interrupt</button><button class="btn btn-text" data-act="term-clear">Clear</button>` : `<span class="exit ${l.exitCode ? "bad" : ""}">${l.exitCode ? `Exited with code ${l.exitCode}` : "Exited"}</span>`}`);
   let t = terms.get(l.id);
   if (!t) {
     const el = document.createElement("div"); el.className = "xterm-wrap";
-    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-    const theme = dark
-      ? { background: "#141414", foreground: "#e8e8e8", cursor: "#4880e8", cursorAccent: "#141414", selectionBackground: "#4880e84d", black: "#3a3a3a", brightBlack: "#6e6e6e", red: "#f87171", brightRed: "#fca5a5", green: "#5fd16a", brightGreen: "#86efac", yellow: "#e9b04a", brightYellow: "#fcd34d", blue: "#8fb0f2", brightBlue: "#b6c9f5", magenta: "#b699f9", brightMagenta: "#d4c2fc", cyan: "#8be6c5", brightCyan: "#99f6e4", white: "#d4d4d4", brightWhite: "#f5f5f5" }
-      // Light: TUIs use white/brightWhite for emphasis, so those are dark greys here to stay readable.
-      : { background: "#fbfbfb", foreground: "#171717", cursor: "#2f6bea", cursorAccent: "#fbfbfb", selectionBackground: "#2f6bea2e", black: "#171717", brightBlack: "#737373", red: "#b91c1c", brightRed: "#dc2626", green: "#15803d", brightGreen: "#16a34a", yellow: "#b45309", brightYellow: "#d97706", blue: "#2b54a8", brightBlue: "#2f6bea", magenta: "#6d28d9", brightMagenta: "#8b5cf6", cyan: "#0f8a6c", brightCyan: "#0d9488", white: "#525252", brightWhite: "#404040" };
+    // The harnesses draw for a dark terminal (Claude Code's own theme), so the terminal stays dark, as it looks at home.
+    const theme = { background: "#141414", foreground: "#e8e8e8", cursor: "#4880e8", cursorAccent: "#141414", selectionBackground: "#4880e84d", black: "#3a3a3a", brightBlack: "#6e6e6e", red: "#f87171", brightRed: "#fca5a5", green: "#5fd16a", brightGreen: "#86efac", yellow: "#e9b04a", brightYellow: "#fcd34d", blue: "#8fb0f2", brightBlue: "#b6c9f5", magenta: "#b699f9", brightMagenta: "#d4c2fc", cyan: "#8be6c5", brightCyan: "#99f6e4", white: "#d4d4d4", brightWhite: "#f5f5f5" };
     const term = new window.Terminal({ fontFamily: '"Geist Mono", "Cascadia Mono", Consolas, monospace', fontSize: 13, lineHeight: 1.4, letterSpacing: 0, cursorBlink: true, cursorStyle: "bar", cursorWidth: 2, scrollback: 8000, allowProposedApi: true, theme });
     const fit = new window.FitAddon.FitAddon(); term.loadAddon(fit); term.open(el);
     term.onData((d) => send({ type: "input", id: l.id, data: d }));
@@ -549,6 +590,12 @@ function renderTerm() {
   }
   const host = $("#thost");
   if (t.el.parentElement !== host) { host.innerHTML = ""; host.appendChild(t.el); setTimeout(() => { fitTerm(t); t.term.focus(); }, 30); }
+}
+// Send the user to the terminal: focus it and flash its frame so the eye lands there.
+function focusTerm(ref) {
+  const t = ref && terms.get(ref.id); if (!t) return;
+  t.term.focus();
+  const f = $("#termwrap .termframe"); if (f) { f.classList.remove("flash"); void f.offsetWidth; f.classList.add("flash"); }
 }
 function fitTerm(t) { try { const c = t.term.cols, r = t.term.rows; t.fit.fit(); if (c !== t.term.cols || r !== t.term.rows || !t.sized) { t.sized = true; send({ type: "resize", id: t.id, cols: t.term.cols, rows: t.term.rows }); } } catch {} }
 
@@ -564,7 +611,7 @@ function sideChatHTML(sd) {
   const forCard = !!(sd.extra.cardKey || sd.extra.ask);
   const busy = sd.busy || (d && d.busy);
   return `
-    <div class="sp-head"><div class="tt"><b>Side chat</b><small>${forked ? "A fork · the session isn't touched" : "Reads the session · it isn't touched"}</small></div><button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button></div>
+    <div class="sp-head">${live ? `<button class="ibtn" data-act="side-close" aria-label="Back to the plan" title="Back to the plan">${icon("back")}</button>` : ""}<div class="tt"><b>Side chat</b><small>${forked ? "A fork · the session isn't touched" : "Reads the session · it isn't touched"}</small></div>${live ? "" : `<button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button>`}</div>
     <div class="sp-meter">
       <div class="l"><span class="num">${d ? `~${kt(discussTok)} tokens here · ${receives ? `sending adds ~${kt(receives)}` : "nothing sent yet"}${mainCtx ? ` · session ${mainCtx.pct}% full` : ""}` : "Starting"}</span></div>
     </div>
@@ -577,8 +624,8 @@ function sideChatHTML(sd) {
     </div>
     <div class="sp-foot">
       ${sd.composing ? `
-        <div class="sp-composed"><div class="h"><span>${forCard ? "Answer for the card" : "Message to send"} · editable</span><span class="num">~${kt(receives)} tokens</span></div><textarea id="sp-composed" data-keep data-draft="composed:${esc(d.id)}" aria-label="Composed answer"></textarea></div>
-        <div class="sp-actions"><button class="btn btn-text" data-act="side-back">Keep discussing</button><span class="sp"></span>${forCard ? `<button class="btn btn-tint" data-act="side-use-composed">Use as the answer</button>` : live ? `<button class="btn btn-tint" data-act="side-send">Send to ${esc(S.labels[sd.ref.harness])}</button>` : `<button class="btn btn-tint" data-act="side-copy">${icon("copy")}Copy</button>`}</div>`
+        <div class="sp-composed"><div class="h"><span>${sd.extra.ask ? "Answer to its question" : forCard ? "Answer for the card" : "Message to send"}</span><span class="num">~${kt(receives)} tokens</span></div><textarea id="sp-composed" data-keep data-draft="composed:${esc(d.id)}" aria-label="Composed answer"></textarea></div>
+        <div class="sp-actions"><button class="btn btn-text" data-act="side-back">Keep discussing</button><span class="sp"></span>${forCard ? `<button class="btn btn-tint" data-act="side-use-composed" ${S.inflight.has("side-use") ? "disabled" : ""}>${sd.extra.ask ? "Send answer" : "Use as the answer"}</button>` : live ? `<button class="btn btn-tint" data-act="side-send">Send to ${esc(S.labels[sd.ref.harness])}</button>` : `<button class="btn btn-tint" data-act="side-copy">${icon("copy")}Copy</button>`}</div>`
       : `
         <div class="sp-compose"><textarea id="sp-in" data-keep data-draft="side:${esc(d ? d.id : "new")}" rows="1" placeholder="Ask on the side" aria-label="Message the side agent"></textarea><button class="send sm" data-act="side-msg" aria-label="Send" ${busy || !d ? "disabled" : ""}>${icon("up")}</button></div>
         <div class="sp-actions"><span class="t3" style="font-size:var(--fs-small);line-height:18px">Nothing here reaches the session until you send.</span><span class="sp"></span><button class="btn btn-tint sm" data-act="side-compose" ${busy || !d || !(d.msgs || []).length ? "disabled" : ""}>Compose answer</button></div>`}
@@ -619,17 +666,14 @@ function overviewHTML() {
   const row = (l) => {
     const st = liveState(l), g = genFor(l.file);
     const cur = g && (g.steps || []).find((s) => s.state === "current");
-    const nowText = st === "needs" ? (l.pendingAsk ? "Asked you a question" : l.pendingPermission ? "Needs your approval" : l.terminalNeeds ? "Waiting in its terminal" : "Has questions for you") : st === "run" ? (cur ? `Working on: ${cur.label}` : "Working") : st === "off" ? "Ended" : st === "idle" ? "Your turn" : (g && g.now) || "";
+    const lref = { l, file: l.file, events: (S.liveTail.get(l.id) || {}).last || [] }, ps = planStepOf(l.id);
+    const nowText = st === "needs" ? needLine(lref, g) || "Needs you" : st === "run" ? activity(lref) || (cur ? `Working on: ${cur.label}` : "Working") : st === "reading" ? "Reading the reply" : st === "off" ? "Ended" : st === "idle" ? "Your turn" : (g && g.now) || "";
     return `<button class="ovrow" id="ov-${esc(l.id)}" data-act="open-live" data-id="${esc(l.id)}">
-      <span class="ovt"><b>${esc(title(l))}</b><small>${esc(shortPath(l.cwd))} · ${esc(S.labels[l.harness])}</small></span>
+      <span class="ovt"><b>${esc(title(l))}</b><small>${ps ? `${esc(clip(ps.plan.title, 28))} · step ${ps.i + 1}/${ps.plan.steps.length}` : esc(shortPath(l.cwd))} · ${esc(engShort(l.harness))}</small></span>
       ${g ? hflow(g.steps, st === "needs" ? "needs" : st === "run" ? "run" : st === "done" ? "done" : "idle") : `<div class="hflow"><span class="hn current run"><span class="rn"></span><span class="hl">Starting</span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span></div>`}
-      <span class="ovnow ${st === "needs" ? "needs" : ""}"><span class="${st === "run" ? "shimmer t2" : ""}">${esc(nowText)}</span></span>
+      <span class="ovnow ${st === "needs" ? "needs" : st === "run" || st === "reading" ? "run" : ""}"><span class="${st === "run" || st === "reading" ? "shimmer" : ""}">${esc(nowText)}</span></span>
       <span class="ovm">${g && cur ? `${g.steps.indexOf(cur) + 1}/${g.steps.length}` : esc(nowAgo(l.lastActivity || l.createdAt))}</span></button>`;
   };
-  const recent = S.saved.filter((s) => genFor(s.file) && !live.some((l) => l.file === s.file)).slice(0, 8);
-  const savedRow = (s) => { const g = genFor(s.file); return `<button class="ovrow" id="ovs-${hid(s.file)}" data-act="open-saved" data-file="${esc(s.file)}" data-h="${esc(s.harness)}">
-      <span class="ovt"><b>${esc(g.title)}</b><small>${esc(shortPath(s.cwd))} · ${esc(S.labels[s.harness])}</small></span>${hflow(g.steps, g.status === "done" ? "done" : "idle")}
-      <span class="ovnow">${esc(g.now || "")}</span><span class="ovm">${esc(nowAgo(s.mtime))}</span></button>`; };
   const plans = S.plans.slice(0, 6);
   const planRow = (p, pi) => {
     const started = p.started || [], done = p.done || [];
@@ -647,12 +691,14 @@ function overviewHTML() {
       <span class="ovm">${action}</span></div>`;
   };
   const needs = count("needs"), run = count("run") + count("reading"), turn = count("idle"), done = count("done");
-  return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">Live and recent sessions, each as a flow read from its transcript</div></header>
+  const running = live.filter((l) => l.alive), ended = live.filter((l) => !l.alive).slice(0, 6);
+  return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">Agents started here: where each one is, and what it needs</div></header>
   <div class="scroll"><div class="page">
     <p class="summary"><b class="${needs ? "needs" : ""}">${needs}</b> need${needs === 1 ? "s" : ""} you · <b>${run}</b> running · <b>${turn}</b> your turn${done ? ` · <b>${done}</b> done` : ""}</p>
-    ${live.length ? `<section class="card ovcard">${live.map(row).join("")}</section>` : `<section class="card ovcard"><div class="ovempty"><span>Nothing running. Start a goal, or open a saved session on the left to see its flow.</span><button class="btn btn-tint" data-act="go" data-page="new">New goal</button></div></section>`}
+    <div class="sec">Running now</div>
+    ${running.length ? `<section class="card ovcard">${running.map(row).join("")}</section>` : `<section class="card ovcard"><div class="ovempty"><span>No agents running. Start one from a new goal.</span><button class="btn btn-tint" data-act="go" data-page="new">New goal</button></div></section>`}
     ${plans.length ? `<div class="sec">Plans</div><section class="card ovcard">${plans.map(planRow).join("")}</section>` : ""}
-    ${recent.length ? `<div class="sec">Recently opened</div><section class="card ovcard">${recent.map(savedRow).join("")}</section>` : ""}
+    ${ended.length ? `<div class="sec">Ended</div><section class="card ovcard ovended">${ended.map(row).join("")}</section>` : ""}
   </div></div>`;
 }
 
@@ -708,7 +754,6 @@ document.addEventListener("click", async (e) => {
       case "go": go(el.dataset.page); break;
       case "open-live": openLive(el.dataset.id); break;
       case "open-saved": openSaved(el.dataset.file, el.dataset.h); break;
-      case "tab": S.tab = el.dataset.tab; render(); if (S.tab === "terminal") { const t = terms.get(S.sel.id); if (t) setTimeout(() => { fitTerm(t); t.term.focus(); }, 40); } break;
       case "regen": ensureGen(true); break;
       case "rail-expand": S.open.add("rail:" + ref.file); render(); break;
       case "tools": S.toolsOpen.has(k) ? S.toolsOpen.delete(k) : S.toolsOpen.add(k); render(); break;
@@ -720,23 +765,11 @@ document.addEventListener("click", async (e) => {
       case "term-clear": terms.get(ref.id)?.term.clear(); break;
       case "term-yes": await api(`/api/sessions/${ref.id}/terminal`, { choice: "yes" }); break;
       case "term-no": await api(`/api/sessions/${ref.id}/terminal`, { choice: "no" }); break;
-      case "term-open": S.tab = "terminal"; render(); break;
-      case "perm-allow": case "perm-deny": {
-        // A queued request can appear under the pointer right after the last one was answered.
-        if (Date.now() - (S.permShown.get(el.dataset.qid) || 0) < 600) break;
-        await guarded("perm", () => api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: a === "perm-allow" }));
-        break;
-      }
-      case "perm-term": await api(`/api/sessions/${ref.id}/permission`, { qid: el.dataset.qid, allow: null }); S.tab = "terminal"; render(); break;
-      // AskUserQuestion
-      case "ask-pick": askPick(ref, el.dataset.ask, +el.dataset.j); break;
-      case "ask-else-open": { const st = S.ask.get(el.dataset.ask); st.elseOpen[st.step] = true; render(); $(`#ask-else-${el.dataset.ask}-${st.step}`)?.focus(); break; }
-      case "ask-else-send": askElse(ref, el.dataset.ask); break;
-      case "ask-continue": askNext(ref, el.dataset.ask); break;
-      case "ask-back": { const st = S.ask.get(el.dataset.ask); cancelAskTimer(st); st.step = Math.max(0, st.step - 1); render(); break; }
-      case "ask-undo": { const st = S.ask.get(el.dataset.ask); cancelAskTimer(st); st.picks[st.step] = new Set(); st.other[st.step] = ""; render(); break; }
-      case "ask-term": await api(`/api/sessions/${ref.id}/ask`, { qid: el.dataset.ask, answers: null }); S.tab = "terminal"; render(); break;
-      case "ask-discuss": { const q = ref.l.pendingAsk; const st = askState(q); const x = q.questions[st.step]; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: q.id, step: st.step }); break; }
+      case "term-open": focusTerm(ref); break;
+      // What the agent needs opens under its step in the plan.
+      case "attn": { const k = "attn:" + ref.id; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
+      // A question in Claude Code's own menu: talk it through on the side; the answer goes back into the menu.
+      case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: ref.l.pendingAsk.id, qi }); break; }
       // Generated cards
       case "pick": pickOption(ref, k, +el.dataset.i, +el.dataset.j); break;
       case "multi-done": { const c = genFor(ref.file).cards[+el.dataset.i]; setAnswer(k, [...(S.picks.get(k) || [])].map((j) => c.options[j].label).join(", ")); break; }
@@ -751,7 +784,6 @@ document.addEventListener("click", async (e) => {
       case "discuss": { const c = genFor(ref.file).cards[+el.dataset.i]; openSide(`${c.title}${c.why ? ` (${c.why})` : ""}${c.options ? `. Options: ${c.options.map((o) => o.label).join("; ")}` : ""}`, { cardKey: k }); break; }
       case "send-answers": await sendAnswers(ref); break;
       case "carried-drop": S.carried.delete(ref.file); render(); break;
-      case "compose-send": await composeSend(ref); break;
       case "resume": armed("resume", () => resume(ref, false)); break;
       case "fork": armed("fork", () => resume(ref, true)); break;
       // Side chat
@@ -791,11 +823,10 @@ document.addEventListener("input", (e) => {
   if (el.dataset.draft) S.drafts.set(el.dataset.draft, el.value);
   if (el.id === "search") { S.search = el.value; render(); return; }
   if (el.id === "ng-goal") { S.ng.goal = el.value; autosize(el); return; }
-  if (el.classList.contains("compose") || el.id === "sp-in") { autosize(el); return; }
+  if (el.id === "sp-in") { autosize(el); return; }
   if (el.id === "sp-composed") { const sd = curSide(); if (sd) sd.composed = el.value; const h = el.parentElement.querySelector(".num"); if (h) h.textContent = `~${kt(Math.round(el.value.length / 4))} tokens`; return; }
   const ai = el.dataset.actInput;
   if (ai === "field") { autosize(el); el.parentElement.querySelector(".enterkey")?.classList.toggle("ready", !!el.value.trim()); }
-  if (ai === "ask-else") { const st = S.ask.get(el.dataset.ask); st.other[st.step] = el.value; el.parentElement.querySelector(".enterkey")?.classList.toggle("ready", !!el.value.trim()); }
   if (ai === "plan-need") S.ng.answers[el.dataset.q] = el.value;
 });
 document.addEventListener("change", (e) => {
@@ -816,12 +847,10 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
-  if (el.classList.contains("compose")) { e.preventDefault(); composeSend(current()).catch((x) => toast(x.message, "", "fail")); }
-  else if (el.id === "sp-in") { e.preventDefault(); sideMsg(); }
+  if (el.id === "sp-in") { e.preventDefault(); sideMsg(); }
   else if (el.id === "ng-goal") { e.preventDefault(); planIt(); }
   else if (el.id === "pk-path") { e.preventDefault(); browse(el.value.trim()).catch((x) => toast(x.message, "", "fail")); }
   else if (el.dataset.actInput === "field") { e.preventDefault(); fieldSend(el.dataset.mode, el.dataset.k); }
-  else if (el.dataset.actInput === "ask-else") { e.preventDefault(); askElse(current(), el.dataset.ask); }
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") schedule(); });
 
@@ -882,63 +911,9 @@ async function sendAnswers(ref) {
     catch (e) { items.forEach((x) => S.sentCards.delete(x.key)); throw e; }
   });
 }
-async function composeSend(ref) {
-  if (!ref || ref.kind !== "live") return;
-  const ta = $(`#compose-${CSS.escape(ref.id)}`); if (!ta) return;
-  const v = ta.value.trim(); if (!v) return;
-  // While the agent's own question is open, what you type is your answer to it.
-  if (ref.l.pendingAsk) { const st = askState(ref.l.pendingAsk); st.other[st.step] = v; ta.value = ""; S.drafts.delete(`compose:${ref.id}`); askElse(ref, ref.l.pendingAsk.id); return; }
-  await guarded("compose:" + ref.id, async () => {
-    ta.value = ""; S.drafts.delete(`compose:${ref.id}`); autosize(ta);
-    try { await api(`/api/sessions/${ref.id}/send`, { text: v }); } catch (e) { ta.value = v; S.drafts.set(`compose:${ref.id}`, v); throw e; }
-  });
-}
 async function resume(ref, fork) {
   const s = await api("/api/resume", { harness: ref.harness, id: ref.id, cwd: ref.cwd, confirm: true, fork, file: ref.file });
   S.live.set(s.id, s); openLive(s.id);
-}
-
-// AskUserQuestion: single-select advances on click; the final send waits 2 s with Undo.
-function cancelAskTimer(st) { clearTimeout(st.timer); clearInterval(st.tick); st.timer = 0; st.until = 0; }
-function askPick(ref, askId, j) {
-  const a = ref.l.pendingAsk; if (!a || a.id !== askId) return;
-  const st = askState(a), qi = st.step, q = a.questions[qi];
-  if (st.sending) return;
-  if (q.multiSelect) { st.picks[qi].has(j) ? st.picks[qi].delete(j) : st.picks[qi].add(j); render(); return; }
-  cancelAskTimer(st);
-  st.picks[qi] = new Set([j]); st.other[qi] = "";
-  if (qi < a.questions.length - 1) { render(); st.timer = setTimeout(() => { if (st.step === qi) { st.step++; render(); } }, 450); return; }
-  armAskSend(ref, a, st);
-}
-function armAskSend(ref, a, st) {
-  if (st.until || st.sending) return; // already counting down
-  cancelAskTimer(st);
-  st.until = Date.now() + 2000; render();
-  st.tick = setInterval(render, 500);
-  st.timer = setTimeout(() => { cancelAskTimer(st); submitAsk(ref.l.id, a.id); }, 2000);
-}
-function askElse(ref, askId) {
-  const a = ref.l.pendingAsk; if (!a || a.id !== askId) return;
-  const st = askState(a), qi = st.step;
-  if (!(st.other[qi] || "").trim()) return;
-  if (!a.questions[qi].multiSelect) st.picks[qi] = new Set();
-  askNext(ref, askId);
-}
-function askNext(ref, askId) {
-  const a = ref.l.pendingAsk; if (!a || a.id !== askId) return;
-  const st = askState(a);
-  if (st.step < a.questions.length - 1) { st.step++; render(); return; }
-  armAskSend(ref, a, st);
-}
-async function submitAsk(id, askId) {
-  const l = S.live.get(id); const a = l && l.pendingAsk; if (!a || a.id !== askId) return;
-  const st = askState(a); if (st.sending) return;
-  const missing = a.questions.findIndex((q, i) => !st.picks[i].size && !(st.other[i] || "").trim());
-  if (missing >= 0) { st.step = missing; render(); return; }
-  st.sending = true; render();
-  const answers = {};
-  a.questions.forEach((q, i) => { const labels = [...st.picks[i]].map((j) => q.options[j].label); if ((st.other[i] || "").trim()) labels.push(st.other[i].trim()); answers[q.question] = labels.join(", "); });
-  try { await api(`/api/sessions/${id}/ask`, { qid: askId, answers }); } catch (e) { st.sending = false; toast(e.message, "", "fail"); render(); }
 }
 
 // Side chat actions
@@ -961,13 +936,15 @@ async function sideCompose() {
 }
 function focusComposed() { const t = $("#sp-composed"); if (t) { const sd = curSide(); if (sd && !t.value) t.value = sd.composed || ""; autosize(t); t.focus({ preventScroll: true }); t.setSelectionRange(0, 0); t.scrollTop = 0; } }
 // From a card: the composed text becomes that card's answer (sent with the others). From an agent's question: it answers that question.
-function sideUse() {
+async function sideUse() {
   const sd = curSide(); if (!sd) return;
   const text = ($("#sp-composed")?.value || sd.composed || "").trim(); if (!text) return;
   if (sd.extra.cardKey) { S.answers.set(sd.extra.cardKey, text); S.reopen.delete(sd.extra.cardKey); }
   else if (sd.extra.ask) {
-    const l = S.live.get(sd.ref.id); const a = l && l.pendingAsk;
-    if (a && a.id === sd.extra.ask) { const st = askState(a); st.step = sd.extra.step || 0; st.other[st.step] = text; st.picks[st.step] = new Set(); askNext({ l }, a.id); }
+    // The answer goes into Claude Code's own question menu, as if typed there.
+    const l = S.live.get(sd.ref.id);
+    if (!l || !l.pendingAsk || l.pendingAsk.id !== sd.extra.ask) { toast("That question was already answered in the terminal", "", "fail"); return; }
+    await guarded("side-use", () => api(`/api/sessions/${sd.ref.id}/answer`, { qi: sd.extra.qi || 0, text }));
   }
   api(`/api/side/${sd.data.id}/sent`, { text }).catch(() => {});
   S.sideOpen = false; S.sides.delete(refKey(current())); render();

@@ -1,6 +1,6 @@
 # GenUI Agent
 
-A calm window over your real agent sessions. It runs the actual harnesses (Claude Code, Codex, Grok) in terminals it owns, reads what each session is doing, and shows it as a goal, a flow and a card for each thing the agent is waiting on you for. When you're not sure how to answer, you talk it through in a side discussion and send back one complete answer, so the main session's context only grows by that answer.
+A visual layer over your real agent sessions. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows where the plan stands: the step it's on, what it's doing right now, and, in amber, when it needs you. When you're not sure how to answer one of its questions, **Discuss it** opens a side chat that knows the session; the answer you settle on goes back into the agent's own menu, so the main session's context only grows by that answer.
 
 ## Start it
 
@@ -15,22 +15,19 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 
 ## What it does
 
-- **Running here**: sessions started from the app. Each is the real CLI in a terminal (the Terminal tab). Claude Code sessions get GenUI's hooks for that session only, so:
-  - multiple-choice questions (AskUserQuestion) appear as cards and your pick is passed straight to Claude Code;
-  - permission requests can be allowed or denied from the card;
-  - folder-trust and other terminal prompts become cards too.
+- **Agent view**: a session started from the app is its real CLI in a terminal, with the plan rail beside it. Its questions and approvals stay in the harness's own menus, answered in the terminal as usual. Claude Code sessions get GenUI's hooks for that session only; they only report (what was asked, what needs approval), and the app reads the terminal's screen to know when a menu is open. The current step is blue while the agent works, amber when it needs you, grey when it's your turn. Click the amber step to see what it needs.
 - **Saved sessions**: everything in `~/.claude/projects`, `~/.codex/sessions` and `~/.grok/sessions`, read-only. Open one to see its generated goal and flow. Resuming one is a deliberate two-step action.
 - **Generated UI**: the app asks Claude (Sonnet, tools off) to read the transcript and return the goal, the flow and the open questions as cards from a fixed kit: choice, approval, answer, teammate, checklist, note. The flow **grows with the work**: finished steps are kept exactly as they were and new steps are appended (up to 30; older ones fold away). It refreshes when a turn ends and, during long turns, every few tool calls or about once a minute (`GENUI_MIDTURN_TOOLS`, default 6; `GENUI_MIDTURN_SEC`, default 60). When the agent keeps its own task list (Codex's `update_plan`, Claude's `TodoWrite` where available), that list *is* the flow and updates the moment it changes, with no model call. Answers you give collect and go to the agent as one message.
-- **Side discussion**: for a Claude Code session it's a real fork (`claude --resume <id> --fork-session`) with read-only tools, so it knows the whole session and the original is untouched. For Codex and Grok sessions it's a Claude Code session that reads that transcript. *Compose answer* writes one complete reply; *Send* types it into the main session.
-- **Orchestrator**: every session as a flow. **New goal** plans a goal into steps (Opus, read-only look at the folder), assigns a harness to each, predicts the questions each step will need, and starts a fresh worker per step with the plan and your early answers.
+- **Side discussion**: for a Claude Code session it's a real fork (`claude --resume <id> --fork-session`) with read-only tools, so it knows the whole session and the original is untouched. For Codex and Grok sessions it's a Claude Code session that reads that transcript. *Compose answer* writes one complete reply. For a question in Claude Code's menu, *Send answer* types it into the menu's own "Type something" option; otherwise *Send* types it into the session.
+- **Orchestrator**: the agents started here, running ones first, each with its step and what it's doing or needs; then plans and the agents that ended. **New goal** plans a goal into steps (Opus, read-only look at the folder), assigns a harness to each, predicts the questions each step will need, and starts a fresh worker per step with the plan and your early answers.
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `server/index.js` | HTTP + WebSocket server, routes, opens the window |
-| `server/live.js` | Terminals (node-pty), Claude Code hooks, session state |
-| `server/hook-client.mjs` | The hook command Claude Code runs; forwards to the app and waits for answers |
+| `server/live.js` | Terminals (node-pty), a headless copy of each screen, Claude Code hooks, session state |
+| `server/hook-client.mjs` | The hook command Claude Code runs; tells the app what happened and returns at once |
 | `server/transcripts.js` | Reads all three harnesses' saved sessions into one shape |
 | `server/genui.js` | Transcript → goal, flow and cards (structured output) |
 | `server/side.js` | Side discussions (forks) and composed answers |
@@ -38,15 +35,15 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 | `web/` | The window: `app.js`, `app.css`, `util.js` |
 | `research/` | The design study of @pitus_'s Generative UI series; `DESIGN.md` is the spec |
 | `prototypes/` | The earlier click-through mockups |
-| `tests/` | `npm test` (unit), `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) and `npm run test:ui` (clicks through the app in headless Chrome, including New goal) |
+| `tests/` | `npm test` (unit), `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) and `npm run test:ui` (clicks through the app in headless Chrome: the agent view, New goal) |
 
 App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-agent`.
 
 ## How answering works
 
-- **Asked directly** cards are the agent's own multiple-choice questions (Claude Code's AskUserQuestion). Your pick goes straight to it after a 2-second undo window; typing in the composer while one is open answers it too.
-- **From the reply** cards are questions GenUI Agent read from the agent's last message. Answers are collected (each card shows "not sent yet") and go together as one message with **Send N answers**. Answers you haven't sent survive the agent's next turn.
-- **Discuss it** opens a side chat about that card. **Use as the answer** puts the composed answer into the card; nothing reaches the session until you send.
+- **The agent's own questions** (Claude Code's AskUserQuestion) and **approvals** appear in its terminal, as always; pick there. The amber step shows the question and its options with **Discuss it**; the side chat's answer goes into the menu as if you'd typed it.
+- **Questions in its reply** are ones GenUI Agent read from the agent's last message, shown as cards under the amber step. Answers are collected (each card shows "not sent yet") and go together as one message with **Send N answers**. Answers you haven't sent survive the agent's next turn.
+- **Discuss it** on a card opens a side chat about it in the rail. **Use as the answer** puts the composed answer into the card; nothing reaches the session until you send.
 - **New goal**: send to plan it into steps (a fresh worker per step, started when you say; steps marked "You" are yours to tick off), or **Start now** for one session in the harness shown.
 - When the window isn't in front, the title shows `(N) GenUI Agent` and Windows notifications appear for questions, approvals and finished turns.
 

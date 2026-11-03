@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import pty from "@lydell/node-pty";
+import xtermHeadless from "@xterm/headless";
 import { DATA, PORT, ROOT, STORES, cleanEnv, hookSecret, ID_RE } from "./config.js";
 import { resolveBin, launchArgs, HARNESSES } from "./harness.js";
 import { readSession } from "./transcripts.js";
@@ -15,14 +16,15 @@ const REG = path.join(DATA, "live.json");
 const sessions = new Map(); // id -> session
 const BUF_MAX = 400_000;
 
-// One settings file adds GenUI's hooks to the sessions it starts (only those sessions).
+// One settings file adds GenUI's hooks to the sessions it starts (only those sessions). The hooks
+// only report: questions and approvals stay in Claude Code's own menus, in its terminal.
 const SETTINGS = path.join(DATA, "claude-hooks.json");
 function writeHookSettings() {
   const cmd = `node "${path.join(ROOT, "server", "hook-client.mjs").replace(/\\/g, "/")}"`;
-  const h = (matcher, timeout) => [{ matcher, hooks: [{ type: "command", command: cmd, ...(timeout ? { timeout } : {}) }] }];
+  const h = (matcher) => [{ matcher, hooks: [{ type: "command", command: cmd }] }];
   const s = { hooks: {
     SessionStart: h(""), UserPromptSubmit: h(""), Stop: h(""), Notification: h(""),
-    PreToolUse: h("AskUserQuestion", 3600), PermissionRequest: h("", 3600), PreCompact: h(""),
+    PreToolUse: h("AskUserQuestion"), PostToolUse: h("AskUserQuestion"), PermissionRequest: h(""), PreCompact: h(""),
   } };
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2));
 }
@@ -43,15 +45,22 @@ export function list() { return [...sessions.values()].map(summary); }
 export function get(id) { return sessions.get(id); }
 
 export function summary(s) {
-  const ask = s.asks[0], perm = s.perms[0];
   return {
     id: s.id, harness: s.harness, label: HARNESSES[s.harness].label, cwd: s.cwd, name: s.name, status: s.status,
     file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin, goalHint: s.goalHint, turnError: s.turnError || null,
-    pendingAsk: ask ? { id: ask.id, questions: ask.questions } : null,
-    pendingPermission: perm ? { id: perm.id, tool: perm.tool, input: perm.input } : null,
-    queued: Math.max(0, s.asks.length - 1) + Math.max(0, s.perms.length - 1),
+    // What Claude Code's own menu in the terminal is waiting on: a question (with its questions) or an approval.
+    native: s.native ? s.native.kind : null,
+    pendingAsk: s.ask && s.native?.kind === "ask" ? { id: s.ask.id, questions: s.ask.questions } : null,
+    pendingPermission: s.perm && s.native?.kind === "permission" ? { id: s.perm.id, tool: s.perm.tool, input: s.perm.input } : null,
     terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity,
   };
+}
+
+// The terminal as it looks now: a headless copy of the screen, fed the same output as the window.
+function screenRows(s) {
+  const b = s.vt.buffer.active, rows = [];
+  for (let i = 0; i < s.vt.rows; i++) rows.push(b.getLine(b.viewportY + i)?.translateToString(true) || "");
+  return rows;
 }
 
 function changed(s, what = "session") {
@@ -76,7 +85,8 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
   const s = {
     id, harness, cwd, name: name || "", model, origin, goalHint: goalHint || prompt || "", pty: p, alive: true, exitCode: null,
     status: prompt ? "working" : "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
-    file: null, asks: [], perms: [], terminalNeeds: null, hooked: false, resumeOf: resume || null,
+    file: null, ask: null, perm: null, native: null, terminalNeeds: null, hooked: false, resumeOf: resume || null,
+    vt: new xtermHeadless.Terminal({ cols: 120, rows: 36, allowProposedApi: true, scrollback: 200 }),
   };
   sessions.set(id, s);
   p.onData((d) => {
@@ -84,13 +94,13 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
     if (s.buf.length > BUF_MAX) s.buf = s.buf.slice(-BUF_MAX);
     s.screen = (s.screen + plain(d)).slice(-6000);
     s.lastOutput = Date.now();
+    s.vt.write(d);
     bus.emit("pty", id, d);
     sniffScreen(s);
   });
   p.onExit(({ exitCode }) => {
     s.alive = false; s.exitCode = exitCode; s.status = "exited";
-    for (const a of s.asks) a.respond({}); for (const q of s.perms) q.respond({});
-    s.asks = []; s.perms = []; s.terminalNeeds = null;
+    s.ask = null; s.perm = null; s.native = null; s.terminalNeeds = null;
     clearInterval(s.watcher); clearTimeout(s.quietTimer); clearTimeout(s.intTimer);
     changed(s);
   });
@@ -103,9 +113,10 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
   return s;
 }
 
-// Prompts that live only in the terminal (folder trust, yes/no) become a card. Claude Code reports
-// everything else through hooks, so its screen is only read until the first hook arrives, and only
-// the last few lines count, so an agent printing "(y/n)" in its reply doesn't trigger a card.
+// Prompts that live only in the terminal (folder trust, yes/no) become a card. Only the last few
+// lines count, so an agent printing "(y/n)" in its reply doesn't trigger a card. Claude Code's own
+// menus (its questions and approvals) are read from the screen as it really looks, so the app knows
+// exactly when one is open and when it closes; the user answers them in the terminal, as always.
 function hookCommands(cwd) {
   const out = [];
   const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") { if (typeof v.command === "string") out.push(v.command); Object.values(v).forEach(walk); } };
@@ -113,10 +124,46 @@ function hookCommands(cwd) {
   return [...new Set(out)].join("\n").slice(0, 400);
 }
 
+// Claude Code's menus end with "Esc to cancel": its question menu says "Enter to select", its approval
+// asks "Do you want to ...". Exported for tests.
+export function nativeMenu(rows) {
+  const filled = rows.filter((r) => r.trim());
+  const foot = filled.slice(-3).join("\n"), near = filled.slice(-30).join("\n");
+  if (!/Esc to cancel/i.test(foot) && !/Ready to submit your answers\?/i.test(near)) return null;
+  if (/Enter to select|Ready to submit your answers\?/i.test(near)) return { kind: "ask" };
+  if (/Do you want to /i.test(near)) return { kind: "permission" };
+  return { kind: "menu" };
+}
+
+function readNative(s) {
+  const m = nativeMenu(screenRows(s));
+  if (m) {
+    s.nativeGoneAt = 0;
+    if (s.native?.kind === m.kind) return;
+    s.native = { ...m, at: Date.now() }; s.status = "needs";
+    changed(s, m.kind === "ask" ? "ask" : m.kind === "permission" ? "permission" : "session");
+    return;
+  }
+  // A menu redraws as it closes; only count it gone once the screen has stayed clear for a moment.
+  if (!s.native) return;
+  if (!s.nativeGoneAt) { s.nativeGoneAt = Date.now(); clearTimeout(s.nativeTimer); s.nativeTimer = setTimeout(() => sniffScreen(s), 500); return; }
+  if (Date.now() - s.nativeGoneAt < 400) return;
+  closeNative(s);
+  changed(s);
+}
+// The menu was answered: the agent carries on, unless its turn already ended while the menu was up.
+function closeNative(s) {
+  if (!s.native) return;
+  if (s.native.kind === "ask") s.ask = null;
+  if (s.native.kind === "permission") s.perm = null;
+  if (s.status === "needs" && !s.terminalNeeds) s.status = (s.stoppedAt || 0) > s.native.at ? "idle" : "working";
+  s.native = null; s.nativeGoneAt = 0;
+}
+
 function sniffScreen(s) {
-  if (s.harness === "claude" && s.hooked) return;
   clearTimeout(s.sniffTimer);
   s.sniffTimer = setTimeout(() => {
+    if (s.harness === "claude") { readNative(s); if (s.hooked) return; }
     const tail = s.screen.slice(-700), flat = s.screen.slice(-2500).replace(/\s+/g, " ");
     let needs = null;
     // An API error Codex prints instead of a reply (bad model, quota, sign-in): the turn is over.
@@ -219,7 +266,12 @@ export function write(id, data) {
   // Answering in the terminal itself: the "waiting in the terminal" card has done its job.
   if (s.terminalNeeds && s.terminalNeeds.kind === "menu" && /[\r\n]/.test(data)) { s.terminalNeeds = null; s.status = "working"; changed(s); }
 }
-export function resize(id, cols, rows) { const s = sessions.get(id); if (s?.alive && cols > 0 && rows > 0) try { s.pty.resize(Math.max(20, Math.min(cols, 500)), Math.max(5, Math.min(rows, 300))); } catch {} }
+export function resize(id, cols, rows) {
+  const s = sessions.get(id);
+  if (!s?.alive || !(cols > 0) || !(rows > 0)) return;
+  const c = Math.max(20, Math.min(cols, 500)), r = Math.max(5, Math.min(rows, 300));
+  try { s.pty.resize(c, r); s.vt.resize(c, r); } catch {}
+}
 
 // Send a message as if typed: paste it as one block, then press Enter. Control characters are
 // stripped so pasted text can't end the paste early and inject keystrokes.
@@ -259,71 +311,60 @@ export function stopAll() { for (const id of sessions.keys()) stop(id); }
 
 // ---- Hooks from Claude Code ------------------------------------------------------
 // Called with each hook event. Returns the question id when the hook waits for an answer.
-export function onHook(id, ev, respond, wantsAnswer) {
+// Claude Code's hooks report what is happening; none of them waits for the app. Its questions and
+// approvals show in its own menus, and the screen tells us when those open and close.
+export function onHook(id, ev) {
   const s = sessions.get(id);
-  if (!s) { respond({}); return null; }
+  if (!s) return;
   const name = ev.hook_event_name;
   s.hooked = true;
   if (ev.transcript_path && !s.file && fs.existsSync(path.dirname(ev.transcript_path))) { s.file = ev.transcript_path; persist(); watch(s); }
   if (name === "SessionStart") { if (s.status === "starting") s.status = "idle"; s.terminalNeeds = null; }
-  if (name === "UserPromptSubmit") { s.status = "working"; s.terminalNeeds = null; }
-  if (name === "Stop") { s.status = "idle"; s.terminalNeeds = null; changed(s, "turn-end"); respond({}); return null; }
-  if (name === "Notification") {
-    const t = ev.notification_type || ev.message || "";
-    if (/permission/i.test(t) && !s.perms.length) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text: "Claude Code is asking for permission in its terminal." }; }
-    else if (/idle_prompt/i.test(t) && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); respond({}); return null; }
+  if (name === "UserPromptSubmit") { s.status = "working"; s.terminalNeeds = null; s.ask = null; s.perm = null; }
+  if (name === "Stop") {
+    s.stoppedAt = Date.now(); s.terminalNeeds = null;
+    if (s.native && s.nativeGoneAt) closeNative(s); // already leaving the screen
+    s.status = s.native ? "needs" : "idle";
+    changed(s, "turn-end"); return;
   }
-  if (name === "PreToolUse" && ev.tool_name === "AskUserQuestion" && wantsAnswer) {
-    const qid = crypto.randomUUID();
-    s.asks.push({ id: qid, questions: (ev.tool_input && ev.tool_input.questions) || [], input: ev.tool_input, respond });
-    s.status = "needs";
-    changed(s, "ask");
-    return qid;
-  }
-  if (name === "PermissionRequest" && wantsAnswer) {
-    const qid = crypto.randomUUID();
-    s.perms.push({ id: qid, tool: ev.tool_name, input: ev.tool_input, respond });
-    s.status = "needs";
-    changed(s, "permission");
-    return qid;
-  }
-  if (name === "PreToolUse" || name === "UserPromptSubmit") { if (s.status !== "working") s.status = "working"; }
-  changed(s);
-  respond({});
-  return null;
-}
-
-// The waiting hook went away (timed out, or Esc in the terminal): drop its card; the terminal has the prompt now.
-export function hookGone(id, qid) {
-  const s = sessions.get(id); if (!s) return;
-  const before = s.asks.length + s.perms.length;
-  s.asks = s.asks.filter((a) => a.id !== qid); s.perms = s.perms.filter((p) => p.id !== qid);
-  if (s.asks.length + s.perms.length === before) return;
-  if (s.alive) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text: "The question moved to the terminal." }; }
+  if (name === "Notification" && /idle_prompt/i.test(ev.notification_type || ev.message || "") && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); return; }
+  if (name === "PreToolUse" && ev.tool_name === "AskUserQuestion") { s.ask = { id: crypto.randomUUID(), questions: (ev.tool_input && ev.tool_input.questions) || [] }; s.status = "needs"; changed(s, "ask"); sniffScreen(s); return; }
+  if (name === "PostToolUse" && ev.tool_name === "AskUserQuestion") { s.ask = null; s.status = "working"; }
+  if (name === "PermissionRequest") { s.perm = { id: crypto.randomUUID(), tool: ev.tool_name, input: ev.tool_input }; s.status = "needs"; changed(s, "permission"); sniffScreen(s); return; }
+  if (name === "PreToolUse" && s.status !== "working" && !s.native) s.status = "working";
   changed(s);
 }
 
-function toTerminal(s, text) { s.status = "needs"; s.terminalNeeds = { kind: "menu", text }; }
-
-// Answer a multiple-choice question: Claude Code receives the answers as if picked in its menu.
-export function answerAsk(id, qid, answers) {
+// Put an answer worked out in a side chat into Claude Code's open question menu, through its own
+// "Type something" option, exactly as if typed there. qi picks the question in a multi-question menu.
+export async function typeAnswer(id, qi, text) {
   const s = sessions.get(id);
-  const i = s ? s.asks.findIndex((a) => a.id === qid) : -1;
-  if (i < 0) throw new Error("That question is no longer open");
-  const [pa] = s.asks.splice(i, 1);
-  if (answers === null) { pa.respond({}); toTerminal(s, "Answer the question in the terminal."); }
-  else { pa.respond({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: { ...pa.input, answers } } }); s.status = s.asks.length || s.perms.length ? "needs" : "working"; }
-  changed(s);
-}
-
-export function answerPermission(id, qid, allow, message) {
-  const s = sessions.get(id);
-  const i = s ? s.perms.findIndex((p) => p.id === qid) : -1;
-  if (i < 0) throw new Error("That request is no longer open");
-  const [pp] = s.perms.splice(i, 1);
-  if (allow === null) { pp.respond({}); toTerminal(s, "Decide in the terminal."); }
-  else { pp.respond({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: allow ? { behavior: "allow" } : { behavior: "deny", message: message || "The user declined this in GenUI Agent." } } }); s.status = s.asks.length || s.perms.length ? "needs" : "working"; }
-  changed(s);
+  if (!s?.alive || s.native?.kind !== "ask" || !s.ask) throw new Error("The question isn't open in the terminal any more");
+  const qs = s.ask.questions, q = qs[qi];
+  if (!q) throw new Error("No such question");
+  const body = String(text).replace(/\r\n?/g, "\n").replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, "").trim();
+  if (!body) throw new Error("Nothing to send");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const key = async (k, ms = 180) => { s.pty.write(k); await sleep(ms); };
+  const flat = () => screenRows(s).join("\n").replace(/\s+/g, " ");
+  const shown = () => flat().includes(q.question.replace(/\s+/g, " ").slice(0, 60));
+  // Several questions show one at a time, as tabs: move to the right one.
+  for (let n = 0; n < qs.length + 1 && qs.length > 1 && !shown(); n++) await key("\x1b[C", 250);
+  if (!shown()) throw new Error("Couldn't find that question in the terminal");
+  const typeRow = (q.options || []).length + 1;
+  if (q.multiSelect) {
+    // Checkbox lists toggle on a number, so walk the cursor down to "Type something" instead.
+    const rows = screenRows(s), cur = rows.map((r) => /^\s*❯\s*(\d+)\./.exec(r)).find(Boolean);
+    const from = cur ? Number(cur[1]) : 1;
+    for (let n = from; n < typeRow; n++) await key("\x1b[B");
+    for (let n = from; n > typeRow; n--) await key("\x1b[A");
+  } else await key(String(typeRow), 250);
+  await key(`\x1b[200~${body}\x1b[201~`, 450);
+  if (q.multiSelect) await key("\x1b[B", 250);
+  await key("\r", 600);
+  // After the last question Claude Code shows a review; submit it when every question has an answer.
+  const review = flat();
+  if (/Ready to submit your answers\?/.test(review) && (review.match(/→/g) || []).length >= qs.length) await key("\r", 300);
 }
 
 // Folder-trust and similar terminal prompts: the safe default needs a keypress the user chooses.

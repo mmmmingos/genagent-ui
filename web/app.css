@@ -522,3 +522,118 @@ pre.diff .add { color: var(--green-ink); display: block; }
 .pk-warn svg { color: var(--amber-dot); flex: none; }
 .pk-warn span { flex: 1; }
 .ovrow.ovplan { grid-template-columns: 220px minmax(0, 1fr) 200px max-content; }
+
+/* ---- Agent view: the real terminal, with the plan rail beside it ---- */
+:root { --rail-w: 340px; }
+@media (max-width: 1180px) { :root { --rail-w: 300px; } }
+.main.agent .termwrap { right: var(--rail-w); padding: 0 12px 16px 24px; }
+.main.agent .termframe { max-width: none; }
+.termframe.flash { animation: tflash 1s var(--ease-out); }
+@keyframes tflash { 0%, 30% { box-shadow: 0 0 0 3px var(--amber-ring); } 100% { box-shadow: var(--shadow-card); } }
+.railpane { position: absolute; top: var(--header-h); right: 0; bottom: 0; width: var(--rail-w); padding: 0 16px 16px 4px; display: flex; flex-direction: column; animation: fadein var(--t-fast) var(--ease-out) both; }
+.railpane::before { content: ""; position: absolute; inset: 0 16px 16px 4px; border: var(--hairline); border-radius: var(--r-card); background: var(--bg-card); box-shadow: var(--shadow-card); z-index: 0; }
+.railpane > * { position: relative; z-index: 1; min-width: 0; }
+.railpane .sp-head { padding: 6px 12px 0 8px; min-height: 48px; }
+.railpane .sp-meter { padding: 0 16px 10px; }
+.railpane .sp-body { padding: 12px 16px; }
+.railpane .sp-foot { padding: 0 12px 12px; }
+
+.pl-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 12px; }
+.pl-eyebrow { display: flex; align-items: center; gap: 6px; font-size: var(--fs-small); line-height: 18px; color: var(--text-3); }
+.pl-eyebrow .ic { width: 14px; height: 14px; }
+.pl-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.pl-title { font-size: var(--fs-title); line-height: var(--lh-title); font-weight: 500; margin: 6px 0 0; color: var(--text-1); }
+.pl-goal { font-size: var(--fs-small); line-height: var(--lh-small); color: var(--text-2); margin: 4px 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pl { list-style: none; margin: 14px 0 0; padding: 0; position: relative; }
+
+/* Each step: a dot on a line. Done steps are solid, later ones dashed and hollow. */
+.pl-row { position: relative; display: flex; gap: 10px; padding: 4px 0; }
+.pl-row::before { content: ""; position: absolute; left: 11.25px; top: 0; bottom: 0; width: 1.5px; background: var(--accent-line); }
+.pl-row:first-child::before { top: 16px; }
+.pl-row:last-child::before { bottom: calc(100% - 16px); }
+.pl-row.next::before, .pl-row.current + .pl-row::before { background: none; border-left: 1.5px dashed var(--text-4); width: 0; }
+.pl-dot { width: 24px; flex: none; position: relative; }
+.pl-dot::after { content: ""; position: absolute; left: 8px; top: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-dot); }
+.pl-row.next .pl-dot::after { background: var(--bg-card); box-shadow: inset 0 0 0 1.5px var(--text-4); }
+.pl-row.other .pl-dot::after { background: var(--accent-dot); box-shadow: 0 0 0 3px var(--accent-tint); }
+.pl-body { flex: 1; min-width: 0; }
+.pl-label { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-meta); line-height: 24px; color: var(--text-1); }
+.pl-label > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pl-row.done .pl-label, .pl-row.next .pl-label { color: var(--text-2); }
+.pl-who { margin-left: auto; flex: none; font-size: var(--fs-small); color: var(--text-3); }
+
+/* The current step is tinted by what the agent is doing: blue working, amber needs you, grey your turn. */
+.pl-row.current { margin: 4px -8px; padding: 6px 8px 8px; border-radius: 12px; background: var(--bg-raised); }
+.pl-row.current::before { display: none; }
+.pl-row.current .pl-dot::after { left: 5px; top: 9px; width: 14px; height: 14px; }
+.pl-row.current.run { background: var(--accent-tint); }
+.pl-row.current.run .pl-dot::after { background: var(--accent-dot); box-shadow: 0 0 0 4px var(--accent-chip); }
+.pl-row.current.run .pl-dot::before { content: ""; position: absolute; left: 1px; top: 5px; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--accent-dot); border-right-color: var(--accent-dot); animation: spin var(--t-spin) linear infinite; z-index: 1; box-sizing: border-box; }
+.pl-row.current.needs { background: var(--amber-tint); box-shadow: inset 0 0 0 1px var(--amber-ring); }
+.pl-row.current.needs .pl-dot::after { background: var(--amber-dot); box-shadow: 0 0 0 4px var(--amber-halo); animation: pulse 1.6s var(--ease-in-out) infinite; }
+.pl-row.current.idle .pl-dot::after { background: var(--text-3); }
+.pl-row.current.done { background: var(--violet-tint); }
+.pl-row.current.done .pl-dot::after { background: var(--violet-dot); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px var(--amber-halo); } }
+.pl-row.current .pl-label { font-weight: 500; }
+.pl-row.current.needs .pl-label > span:first-child { color: var(--amber-ink); }
+.pl-row.current.run .pl-label > span:first-child { color: var(--accent-ink); }
+
+.pl-now { display: flex; align-items: center; gap: 6px; font-size: var(--fs-small); line-height: 18px; color: var(--text-2); margin-top: 2px; min-width: 0; }
+.pl-now > span:not(.spin) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-now .spin { width: 12px; height: 12px; }
+.pl-now.run .shimmer { --c: var(--accent-ink); --shine: var(--accent-line); }
+button.pl-now.needs { width: 100%; text-align: left; color: var(--amber-ink); font-weight: 500; padding: 4px 0; cursor: pointer; }
+button.pl-now.needs:hover > span { text-decoration: underline; text-decoration-color: var(--amber-underline); text-underline-offset: 3px; }
+button.pl-now.needs .ic { flex: none; width: 14px; height: 14px; }
+button.pl-now.needs > .ic:last-child { margin-left: auto; width: 12px; height: 12px; }
+
+/* The agent's own steps, under the plan step it is working on. */
+.pl-sub { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pl-s { display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); line-height: 20px; color: var(--text-2); min-width: 0; }
+.pl-s > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-sd { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--accent-dot); }
+.pl-s.next .pl-sd { background: none; box-shadow: inset 0 0 0 1.5px var(--text-4); }
+.pl-s.current { color: var(--text-1); }
+.pl-s.current.needs .pl-sd { background: var(--amber-dot); }
+.pl-s.current.idle .pl-sd { background: var(--text-3); }
+
+/* What the agent needs, opened under its step. */
+.attn { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.at-q { background: var(--bg-card); border: var(--hairline); border-radius: 12px; padding: 10px 12px 12px; }
+.at-h { font-size: var(--fs-small); color: var(--text-3); line-height: 18px; }
+.at-qt { font-size: var(--fs-meta); line-height: 20px; color: var(--text-1); font-weight: 500; }
+.at-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.at-o { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-small); line-height: 18px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--bg-raised); color: var(--text-2); }
+.at-o .num { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.at-act { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.at-act .t3 { font-size: var(--fs-small); color: var(--text-3); }
+.at-act .btn .ic { width: 14px; height: 14px; margin-right: 2px; }
+.attn pre.code { max-height: 160px; overflow: auto; margin: 8px 0 0; font-size: var(--fs-mono); white-space: pre-wrap; word-break: break-word; }
+.attn .card { padding: 12px; box-shadow: none; }
+.attn .qcard h3 { font-size: var(--fs-meta); line-height: 20px; }
+.attn .answerbar { padding: 0; }
+
+.pl-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--divider); }
+.pl-foot:empty { display: none; }
+.pl-foot .chip { height: 26px; font-size: var(--fs-small); box-shadow: none; padding: 0 10px; }
+.pl-foot .sp { flex: 1; }
+
+/* Orchestrator */
+.ovnow.run { color: var(--accent-ink); }
+.ovnow.run .shimmer { --c: var(--accent-ink); --shine: var(--accent-line); }
+.ovended .ovrow { opacity: .72; }
+
+/* The terminal is always dark, like the harness at home; its frame matches. */
+.termframe { background: #141414; border-color: rgba(0,0,0,.18); }
+.tstrip { background: #1b1b1b; border-bottom-color: #262626; color: #e8e8e8; }
+.tstrip b { white-space: nowrap; flex: none; color: #e8e8e8; }
+.tstrip .ic, .tstrip .cwd { color: #8a8a8a; }
+.tstrip .btn-text { color: #c8c8c8; }
+.tstrip .btn-text:hover { background: #2a2a2a; color: #f0f0f0; }
+.tstrip .exit { color: #a3a3a3; } .tstrip .exit.bad { color: #fb7185; }
+.railpane .sp-actions { flex-wrap: wrap; row-gap: 6px; }
+.railpane .sp-composed .h { gap: 8px; }
+.railpane .sp-composed .h > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Under the amber step, cards don't repeat what the step already says. */
+.attn .qcard .eyebrow .tag, .attn .qcard .eyebrow .stat { display: none; }

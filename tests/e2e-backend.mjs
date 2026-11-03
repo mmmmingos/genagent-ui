@@ -54,22 +54,22 @@ try {
     check("terminal trust prompt detected as a card", got.terminalNeeds.kind === "trust");
     await api(`/api/sessions/${s.id}/terminal`, { choice: "yes" });
   }
-  // Wait for the AskUserQuestion to arrive through the hook.
+  // The question shows in Claude Code's own menu; the app knows its questions from the hook and sees the menu open.
   let ask = null;
-  for (let i = 0; i < 120 && !ask; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); if (cur.pendingAsk) ask = cur.pendingAsk; }
-  check("AskUserQuestion arrived via hook", !!ask);
-  if (ask) {
-    const q = ask.questions[0];
-    await api(`/api/sessions/${s.id}/ask`, { qid: ask.id, answers: { [q.question]: "Red" } });
-  }
-  // The agent should now print ANSWER=Red in its terminal and the transcript.
+  for (let i = 0; i < 120 && !ask; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); if (cur.pendingAsk && cur.native === "ask") ask = cur.pendingAsk; }
+  check("question open in Claude Code's own menu, with its questions known", !!ask && ask.questions.length === 1);
+  // An answer worked out on the side goes into the menu's "Type something", as if typed there.
+  if (ask) await api(`/api/sessions/${s.id}/answer`, { qi: 0, text: "Teal, from the side chat" });
   let ok = false;
   for (let i = 0; i < 90 && !ok; i++) {
     await sleep(1000);
     const cur = (await api("/api/state")).live.find((x) => x.id === s.id);
-    if (cur.file && fs.existsSync(cur.file) && /ANSWER=Red/.test(fs.readFileSync(cur.file, "utf8"))) ok = true;
+    if (cur.file && fs.existsSync(cur.file) && /ANSWER=Teal/.test(fs.readFileSync(cur.file, "utf8"))) ok = true;
   }
-  check("agent received the answer (ANSWER=Red in transcript)", ok);
+  check("agent received the typed answer (ANSWER=Teal in transcript)", ok);
+  let closed = false;
+  for (let i = 0; i < 10 && !closed; i++) { const a = (await api("/api/state")).live.find((x) => x.id === s.id); closed = !a.pendingAsk && a.native !== "ask"; if (!closed) await sleep(500); }
+  check("menu closed: no question pending", closed);
   const cur = (await api("/api/state")).live.find((x) => x.id === s.id);
   check("transcript file found", !!cur.file);
   check("turn-end status idle", cur.status === "idle");

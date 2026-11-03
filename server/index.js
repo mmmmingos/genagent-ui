@@ -81,13 +81,8 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith("/hook/") && req.method === "POST") {
       const sid = decodeURIComponent(p.slice(6));
       if (!ID_RE.test(sid) || !safeEqual(String(req.headers["x-genui-token"] || ""), hookSecret(sid))) return json(res, 403, {});
-      const ev = await body(req);
-      const wants = url.searchParams.get("wait") === "1";
-      const respond = (out) => json(res, 200, out || {});
-      const qid = live.onHook(sid, ev, respond, wants);
-      // If the hook gives up (timeout, Esc in the terminal, Claude kills it), the card must go too.
-      if (qid) res.on("close", () => { if (!res.writableEnded) live.hookGone(sid, qid); });
-      return;
+      live.onHook(sid, await body(req));
+      return json(res, 200, {});
     }
 
     // First visit with a one-time launch code sets the per-launch cookie, then the address bar is cleaned.
@@ -127,8 +122,8 @@ const server = http.createServer(async (req, res) => {
     if (m) {
       const [, id, action] = m; checkId(id);
       if (action === "send") { live.send(id, String(B.text || "")); return json(res, 200, { ok: true }); }
-      if (action === "ask") { live.answerAsk(id, B.qid, B.answers ?? null); return json(res, 200, { ok: true }); }
-      if (action === "permission") { live.answerPermission(id, B.qid, B.allow ?? null, B.message); return json(res, 200, { ok: true }); }
+      // An answer from a side chat, typed into Claude Code's open question menu.
+      if (action === "answer") { await live.typeAnswer(id, Number(B.qi) || 0, String(B.text || "")); return json(res, 200, { ok: true }); }
       if (action === "terminal") { live.answerTerminal(id, B.choice); return json(res, 200, { ok: true }); }
       if (action === "interrupt") { live.interrupt(id, B.key === "ctrlc" ? "\x03" : "\x1b"); return json(res, 200, { ok: true }); }
       if (action === "stop") { live.stop(id); return json(res, 200, { ok: true }); }

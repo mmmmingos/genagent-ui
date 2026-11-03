@@ -124,3 +124,15 @@ test("Codex: a failed turn surfaces its error, and a new turn clears it", () => 
   assert.equal(p.events.at(-1).role, "error");
   assert.equal(parseCodex([...lines, { type: "event_msg", payload: { type: "task_started" } }]).turnError, null);
 });
+
+test("Claude Code's own menus are recognised from the screen", async () => {
+  const { nativeMenu } = await import("../server/live.js");
+  const ask = ["❯ 1. Red", "  2. Blue", "  3. Type something.", "  4. Chat about this", "", "Enter to select · ↑/↓ to navigate · Esc to cancel"];
+  const perm = [" Bash command", "   echo hi > a.txt", " Do you want to proceed?", " ❯ 1. Yes", "   2. No", "", " Esc to cancel · Tab to amend"];
+  const review = ["Review your answers", " ● What shape?", "   → Pill", "Ready to submit your answers?", "❯ 1. Submit answers", "  2. Cancel"];
+  const idle = ["● ANSWER=Red", "", "❯ ", "  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt"];
+  assert.deepEqual(nativeMenu(ask), { kind: "ask" });
+  assert.deepEqual(nativeMenu(perm), { kind: "permission" });
+  assert.deepEqual(nativeMenu(review), { kind: "ask" });
+  assert.equal(nativeMenu(idle), null);
+});

@@ -54,29 +54,30 @@ try {
   check("saved session: generated goal shown", await waitFor(`!!document.querySelector('#goal .goal-sub')`, 120000));
   await sleep(1200); await shot(`03-saved-goal-${theme}`);
 
-  // Start a live Claude Code session in the sandbox through the API, then open it.
+  // Start a live Claude Code session in the sandbox through the API, then open it: its terminal, with the plan rail.
   const s = await api("/api/sessions", { harness: "claude", cwd: SANDBOX, model: "sonnet", name: "Landing page",
-    prompt: "Read notes.md. Then ask me, using the AskUserQuestion tool, which headline style I prefer for the coffee landing page (offer 3 short options with descriptions). After I answer, write a 2-sentence hero in your reply and end by asking me in plain text two open questions: what the monthly price is, and whether we offer a free trial." });
+    prompt: "Read notes.md. Then write a 2-sentence hero for the coffee landing page in your reply and end by asking me in plain text two open questions: what the monthly price is, and whether we offer a free trial." });
   await sleep(500);
   await ev(`GENUI.openLive(${JSON.stringify(s.id)})`);
-  const trust = await waitFor(`!!document.querySelector('[id^=tn-]') || !!document.querySelector('[id^=ask-]')`, 90000);
-  if (await ev(`!!document.querySelector('[id^=tn-]')`)) { await shot(`04-live-trust-${theme}`); await ev(`document.querySelector('[data-act=term-yes]').click()`); }
-  check("AskUserQuestion card shown", await waitFor(`!!document.querySelector('[id^=ask-]')`, 150000));
-  await sleep(500); await shot(`05-live-ask-${theme}`);
-  await ev(`document.querySelectorAll('[data-act=ask-pick]')[1].click()`);
-  await sleep(250); await shot(`06-live-ask-picked-${theme}`);
-  check("generated question cards after the turn", await waitFor(`document.querySelectorAll('.qcard[id^=gc-]').length >= 1`, 240000));
-  await sleep(1200); await shot(`07-live-cards-${theme}`);
+  // Folder trust in a fresh folder shows as the step needing you; open it from the rail and trust.
+  await waitFor(`!!document.querySelector('#railpane button.pl-now.needs') || GENUI.current().state === 'run'`, 90000);
+  if (await ev(`/Trust/.test(document.querySelector('#railpane button.pl-now.needs')?.textContent||'')`)) {
+    await ev(`document.querySelector('#railpane button.pl-now.needs').click()`); await sleep(300); await shot(`04-live-trust-${theme}`);
+    await ev(`document.querySelector('#railpane [data-act=term-yes]').click()`);
+  }
+  // The questions at the end of the reply turn the step amber; clicking it opens them as cards.
+  check("questions in the reply: the step turns amber", await waitFor(`/in its reply/.test(document.querySelector('#railpane button.pl-now.needs')?.textContent||'')`, 240000));
+  await sleep(800); await shot(`05-live-needs-${theme}`);
+  await ev(`document.querySelector('#railpane button.pl-now.needs').click()`);
+  check("generated question cards after the turn", await waitFor(`document.querySelectorAll('#railpane .qcard[id^=gc-]').length >= 1`, 5000));
+  await sleep(600); await shot(`07-live-cards-${theme}`);
   // Answer the first card (input or choice), then send from the chip.
   const kind = await ev(`(()=>{const c=document.querySelector('.qcard[id^=gc-]'); if(c.querySelector('[data-act=pick]')){c.querySelector('[data-act=pick]').click(); return 'choice';} const t=c.querySelector('textarea[data-act-input=field]'); if(t){t.value='18 dollars a month'; t.dispatchEvent(new Event('input',{bubbles:true})); t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); return 'input';} return 'other';})()`);
   await sleep(900);
   check(`answered card collapses to a summary (${kind})`, await ev(`!!document.querySelector('.qsum-card')`));
   await shot(`08-card-answered-${theme}`);
-  // Terminal tab.
-  await ev(`document.querySelector('[data-act=tab][data-tab=terminal]').click()`); await sleep(1800);
+  // The real terminal is always beside the rail.
   check("terminal shows the real Claude Code", await ev(`!!document.querySelector('.xterm-rows') && document.querySelector('.xterm-rows').textContent.length > 50`));
-  await shot(`09-terminal-${theme}`);
-  await ev(`document.querySelector('[data-act=tab][data-tab=flow]').click()`); await sleep(400);
   // Side chat on the remaining open card.
   await ev(`(document.querySelector('.qcard[id^=gc-] [data-act=discuss]')||document.querySelector('[data-act=side-toggle]')).click()`);
   await sleep(600); await shot(`10-side-opening-${theme}`);
@@ -88,8 +89,10 @@ try {
   check("composed answer", await waitFor(`!!document.getElementById('sp-composed') && document.getElementById('sp-composed').value.length > 20`, 180000));
   await sleep(300); await shot(`12-side-composed-${theme}`);
   await ev(`(document.querySelector('[data-act=side-use-composed]')||document.querySelector('[data-act=side-send]')).click()`);
-  check("side chat closed after sending", await waitFor(`document.getElementById('panel').hidden`, 10000));
-  // Send the remaining answered card from the chip, if any.
+  check("side chat closed back to the plan", await waitFor(`!document.querySelector('#railpane .sp-head') && !!document.querySelector('#railpane .pl-scroll')`, 10000));
+  // Send the answered cards from the step's answer bar.
+  if (!(await ev(`!!document.querySelector('#railpane .attn')`))) await ev(`document.querySelector('#railpane button.pl-now.needs')?.click()`);
+  await sleep(300);
   if (await ev(`!!document.querySelector('[data-act=send-answers]:not([disabled])')`)) await ev(`document.querySelector('[data-act=send-answers]').click()`);
   check("agent works on the answers", await waitFor(`GENUI.current() && GENUI.current().state === 'run'`, 20000));
   await sleep(1500); await shot(`13-working-${theme}`);
