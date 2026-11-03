@@ -26,7 +26,7 @@ export async function plan({ goal, cwd }) {
   const have = available();
   const harnesses = Object.entries(have).filter(([, ok]) => ok).map(([k]) => k).join(", ");
   const r = await claudeCall({
-    model: MODELS.plan, schema: SCHEMA, tools: "Read,Grep,Glob", userSettingsOnly: true, lane: "plan", cwd: cwd && fs.existsSync(cwd) ? cwd : undefined, timeoutMs: 300000,
+    model: MODELS.plan, schema: SCHEMA, tools: "Read,Grep,Glob", userSettingsOnly: true, noPersist: true, lane: "plan", cwd: cwd && fs.existsSync(cwd) ? cwd : undefined, timeoutMs: 300000,
     appendSystem: "You are GenUI Agent's orchestrator. You plan; you never edit files or run commands.",
     prompt: `Plan this goal as a short flow of steps (3-8). You may glance at the project folder to ground the plan, but keep it quick.
 Goal: ${goal}

@@ -168,9 +168,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/folders") {
       const base = url.searchParams.get("path") || path.join(process.env.USERPROFILE || "", "Documents", "GitHub");
-      let dirs = [];
-      try { dirs = fs.readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".") && d.name !== "node_modules").map((d) => d.name).slice(0, 300); } catch {}
-      return json(res, 200, { path: path.resolve(base), parent: path.dirname(path.resolve(base)), dirs });
+      let dirs = [], exists = false;
+      try { exists = fs.statSync(base).isDirectory(); dirs = fs.readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".") && d.name !== "node_modules").map((d) => d.name).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).slice(0, 400); } catch {}
+      return json(res, 200, { path: path.resolve(base), parent: path.dirname(path.resolve(base)), dirs, exists });
     }
     if (p === "/api/quit" && req.method === "POST") { json(res, 200, { ok: true }); setTimeout(shutdown, 200); return; }
     return json(res, 404, { error: "Unknown endpoint" });

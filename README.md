@@ -38,7 +38,7 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 | `web/` | The window: `app.js`, `app.css`, `util.js` |
 | `research/` | The design study of @pitus_'s Generative UI series; `DESIGN.md` is the spec |
 | `prototypes/` | The earlier click-through mockups |
-| `tests/` | `npm test` (unit) and `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) |
+| `tests/` | `npm test` (unit), `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) and `npm run test:ui` (clicks through the app in headless Chrome, including New goal) |
 
 App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-agent`.
 

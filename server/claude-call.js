@@ -10,17 +10,19 @@ function slot(lane) { const L = LANES[lane]; return new Promise((res) => { if (L
 function release(lane) { const L = LANES[lane]; L.running--; const n = L.queue.shift(); if (n) { L.running++; n(); } }
 
 // opts: { prompt, stdin, model, schema, system, appendSystem, lean, tools, resume, fork, sessionId, cwd,
-//         addDirs, userSettingsOnly, lane, onChild, timeoutMs }
+//         addDirs, userSettingsOnly, noPersist, lane, onChild, timeoutMs }
 export async function claudeCall(opts) {
   const bin = resolveBin("claude");
   if (!bin) throw new Error("Claude Code isn't installed");
-  const a = ["-p", "--output-format", "json"];
+  const a = ["-p"];
   if (opts.model) a.push("--model", opts.model);
   if (opts.schema) a.push("--json-schema", JSON.stringify(opts.schema));
   if (opts.lean) a.push("--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "", "--no-session-persistence");
   // Planner and side chats may run in a folder the owner just picked: load only the owner's own
   // settings and no MCP servers, never that folder's project settings, hooks or .mcp.json.
   if (opts.userSettingsOnly && !opts.lean) a.push("--setting-sources", "user", "--strict-mcp-config");
+  // App-internal calls (planning) are not sessions the owner should see in his history.
+  if (opts.noPersist && !opts.lean) a.push("--no-session-persistence");
   if (opts.system) a.push("--system-prompt", opts.system);
   if (opts.appendSystem) a.push("--append-system-prompt", opts.appendSystem);
   if (opts.tools !== undefined && !opts.lean) a.push("--tools", opts.tools);
@@ -28,7 +30,9 @@ export async function claudeCall(opts) {
   if (opts.fork) a.push("--fork-session");
   if (opts.sessionId) a.push("--session-id", opts.sessionId);
   for (const d of opts.addDirs || []) a.push("--add-dir", d);
-  a.push(/^\s*-/.test(opts.prompt) ? " " + opts.prompt : opts.prompt);
+  // List-valued options (--tools, --add-dir) swallow whatever follows them, so a single-value
+  // option always sits right before the prompt.
+  a.push("--output-format", "json", /^\s*-/.test(opts.prompt) ? " " + opts.prompt : opts.prompt);
   const lane = opts.lane || "agent";
   await slot(lane);
   try {

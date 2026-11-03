@@ -682,7 +682,6 @@ function newGoalHTML() {
 
 // ---- Events (one delegated handler) ---------------------------------------------------------------------
 document.addEventListener("click", async (e) => {
-  if (!S.notifAsked && "Notification" in window && Notification.permission === "default") { S.notifAsked = true; Notification.requestPermission().catch(() => {}); }
   const el = e.target.closest("[data-act]");
   if (S.picker && !e.target.closest(".picker") && !e.target.closest("[data-act=pick-folder]")) closePicker();
   if (!el || el.disabled) return;
@@ -752,7 +751,8 @@ document.addEventListener("click", async (e) => {
       case "pick-folder": openPicker(el, S.ng.cwd || ""); break;
       case "pk-up": browse(S.picker.parent); break;
       case "pk-into": browse(S.picker.path.replace(/[\\/]+$/, "") + "\\" + el.dataset.d); break;
-      case "pk-use": S.ng.cwd = S.picker.path; closePicker(); render(); break;
+      case "pk-use": S.ng.cwd = S.picker.path; closePicker(); render(); $("#ng-goal")?.focus(); break;
+      case "pk-pick": S.ng.cwd = el.dataset.p; closePicker(); render(); $("#ng-goal")?.focus(); break;
       case "ng-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); S.ng.harness = av[(av.indexOf(S.ng.harness) + 1) % av.length]; render(); break; }
       case "start-now": await startNow(); break;
       case "plan": await planIt(); break;
@@ -796,6 +796,7 @@ document.addEventListener("keydown", (e) => {
   if (el.classList.contains("compose")) { e.preventDefault(); composeSend(current()).catch((x) => toast(x.message, "", "fail")); }
   else if (el.id === "sp-in") { e.preventDefault(); sideMsg(); }
   else if (el.id === "ng-goal") { e.preventDefault(); planIt(); }
+  else if (el.id === "pk-path") { e.preventDefault(); browse(el.value.trim()).catch((x) => toast(x.message, "", "fail")); }
   else if (el.dataset.actInput === "field") { e.preventDefault(); fieldSend(el.dataset.mode, el.dataset.k); }
   else if (el.dataset.actInput === "ask-else") { e.preventDefault(); askElse(current(), el.dataset.ask); }
 });
@@ -807,6 +808,7 @@ function go(page) {
   const sc = $(".scroll"); if (sc) sc.scrollTop = 0;
   if (page === "new") setTimeout(() => $("#ng-goal")?.focus(), 20);
 }
+function askNotify() { if (!S.notifAsked && "Notification" in window && Notification.permission === "default") { S.notifAsked = true; setTimeout(() => Notification.requestPermission().catch(() => {}), 1500); } }
 function openLive(id) { S.armed = null; S.page = "session"; S.sel = { kind: "live", id }; S.sideOpen = false; S.forceBottom = true; render(); ensureGen(); }
 async function openSaved(file, harness) {
   S.armed = null; S.page = "session"; S.sel = { kind: "saved", file, harness }; S.tab = "flow"; S.sideOpen = false; render();
@@ -972,7 +974,7 @@ async function startNow() {
   if (!ng.cwd) { openPicker($("#ng-folder"), ""); return; }
   await guarded("start-now", async () => {
     const s = await api("/api/sessions", { harness: ng.harness, cwd: ng.cwd, prompt: ng.goal.trim() || undefined, goalHint: ng.goal.trim() });
-    S.live.set(s.id, s); S.ng.goal = ""; S.drafts.delete("ng-goal"); openLive(s.id);
+    S.live.set(s.id, s); S.ng.goal = ""; S.drafts.delete("ng-goal"); openLive(s.id); askNotify();
   });
 }
 async function planGo() {
@@ -991,19 +993,39 @@ async function startStep(plan, i, key) {
   await guarded(key || `step:${i}`, async () => {
     const s = await api("/api/plan/start", { plan, index: i, cwd: plan.cwd, answers: plan.answers || {} });
     plan.started = plan.started || []; plan.started[i] = s.id; savePlans();
-    S.live.set(s.id, s); openLive(s.id);
+    S.live.set(s.id, s); openLive(s.id); askNotify();
   });
 }
 async function openPicker(anchor, path) { S.picker = { anchor }; await browse(path); }
+// Folders your sessions already ran in, newest first: the quickest way to pick a project.
+function recentFolders() {
+  const seen = new Set(), out = [];
+  const add = (cwd) => { if (!cwd || /\\sandbox(\\|$)|\\Temp\\|\\AppData\\/i.test(cwd)) return; const k = cwd.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(cwd); } };
+  [...S.live.values()].sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0)).forEach((l) => add(l.cwd));
+  S.saved.forEach((x) => add(x.cwd));
+  return out.slice(0, 6);
+}
 async function browse(path) {
   const r = await api(`/api/folders${path ? `?path=${encodeURIComponent(path)}` : ""}`);
+  if (path && !r.exists) { toast("That folder doesn't exist", path, "fail"); return; }
   S.picker = { ...S.picker, ...r };
   let pk = $(".picker");
   if (!pk) { pk = document.createElement("div"); pk.className = "picker"; document.body.appendChild(pk); }
-  pk.innerHTML = `<div class="pk-head"><button class="ibtn sm" data-act="pk-up" aria-label="Up one folder">${icon("back")}</button><span class="pk-path" title="${esc(r.path)}">${esc(r.path)}</span><button class="btn btn-tint sm" data-act="pk-use">Use this folder</button></div>
-    <div class="pk-list">${r.dirs.map((d) => `<button class="pk-item" data-act="pk-into" data-d="${esc(d)}">${icon("folder")}${esc(d)}</button>`).join("") || `<div class="sempty">No folders here.</div>`}</div>`;
+  const recent = S.picker.showRecent !== false ? recentFolders() : [];
+  pk.innerHTML = `
+    ${recent.length ? `<div class="pk-sec">Recent projects</div><div class="pk-recent">${recent.map((d) => `<button class="pk-item" data-act="pk-pick" data-p="${esc(d)}" title="${esc(d)}">${icon("folder")}<span class="pk-name">${esc(shortPath(d))}</span><span class="pk-full">${esc(d)}</span></button>`).join("")}</div>` : ""}
+    <div class="pk-head"><button class="ibtn sm" data-act="pk-up" aria-label="Up one folder" title="Up one folder">${icon("back")}</button><input class="pk-path-in" id="pk-path" value="${esc(r.path)}" aria-label="Folder path" spellcheck="false" title="Type or paste a path, then Enter"><button class="btn btn-tint sm" data-act="pk-use" title="Use ${esc(r.path)}">Use this folder</button></div>
+    <div class="pk-list">${r.dirs.map((d) => `<div class="pk-row"><button class="pk-item" data-act="pk-pick" data-p="${esc(r.path.replace(/[\\/]+$/, "") + "\\" + d)}" title="Use this folder">${icon("folder")}<span class="pk-name">${esc(d)}</span></button><button class="ibtn sm pk-open" data-act="pk-into" data-d="${esc(d)}" aria-label="Open ${esc(d)}" title="Look inside">${icon("chev")}</button></div>`).join("") || `<div class="sempty">No folders inside. Use this one, or go up.</div>`}</div>`;
   const a = S.picker.anchor && S.picker.anchor.getBoundingClientRect();
-  if (a) { const h = pk.offsetHeight || 330; const top = a.top - 8 - h; pk.style.left = `${Math.max(16, Math.min(a.left, innerWidth - 436))}px`; pk.style.top = `${top > 16 ? top : a.bottom + 8}px`; }
+  // Keep the picker on screen: above the button if it fits, else below, else clamped and scrollable.
+  pk.style.maxHeight = `${innerHeight - 32}px`;
+  if (a) {
+    const h = Math.min(pk.offsetHeight || 330, innerHeight - 32);
+    let top = a.top - 8 - h;
+    if (top < 16) top = a.bottom + 8 + h <= innerHeight - 16 ? a.bottom + 8 : Math.max(16, innerHeight - 16 - h);
+    pk.style.left = `${Math.max(16, Math.min(a.left, innerWidth - pk.offsetWidth - 16))}px`;
+    pk.style.top = `${top}px`;
+  }
 }
 function closePicker() { $(".picker")?.remove(); S.picker = null; }
 

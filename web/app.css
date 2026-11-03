@@ -503,3 +503,18 @@ pre.diff .add { color: var(--green-ink); display: block; }
 .ovrow { grid-template-columns: 210px minmax(0, 1fr) 150px 64px; }
 .hn .hl { font-size: 12px; line-height: 16px; color: var(--text-2); }
 .hn.next .hl { color: var(--text-3); }
+
+/* Folder picker: recent projects, choose on click, › to look inside, a path box */
+.pk-sec { font-size: var(--fs-small); color: var(--text-3); padding: 10px 14px 4px; }
+.pk-recent { padding: 0 6px 6px; border-bottom: 1px solid var(--divider); }
+.pk-item { min-width: 0; }
+.pk-item .pk-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-item .pk-full { margin-left: auto; font-size: var(--fs-small); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; direction: rtl; text-align: left; }
+.pk-row { display: flex; align-items: center; gap: 2px; }
+.pk-row .pk-item { flex: 1; }
+.pk-open { color: var(--text-3); }
+.pk-path-in { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--text-1); background: var(--bg-raised); border: 1px solid transparent; border-radius: 8px; padding: 5px 8px; outline: none; }
+.pk-path-in:focus { border-color: var(--accent); box-shadow: var(--accent-ring); background: var(--bg-card); }
+.picker { width: 460px; }
+
+.picker { overflow: auto; }

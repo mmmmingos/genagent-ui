@@ -7,10 +7,11 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test tests/",
+    "test": "node --test tests/unit.test.mjs",
     "setup": "node scripts/install.mjs",
     "test:e2e": "node tests/e2e-backend.mjs",
-    "test:flow": "node tests/e2e-flow.mjs"
+    "test:flow": "node tests/e2e-flow.mjs",
+    "test:ui": "node tests/ui-drive.mjs && node tests/ui-newgoal.mjs"
   },
   "engines": {
     "node": ">=22"
