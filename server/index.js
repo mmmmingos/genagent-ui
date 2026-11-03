@@ -138,7 +138,7 @@ const server = http.createServer(async (req, res) => {
       const harness = url.searchParams.get("harness"), file = findFile(harness, url.searchParams.get("file"));
       if (!file) return json(res, 404, { error: "Session not found" });
       const parsed = readSession(harness, file);
-      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, events: parsed.events.slice(-80), total: parsed.events.length, gen: cached(file) });
+      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, plan: parsed.plan || null, events: parsed.events.slice(-80), total: parsed.events.length, gen: cached(file) });
     }
     if (p === "/api/gen" && req.method === "POST") {
       const file = findFile(B.harness, B.file);
@@ -205,13 +205,37 @@ wss.on("connection", (ws) => {
 const broadcast = (msg, onlyFor) => { const s = JSON.stringify(msg); for (const ws of wss.clients) if (ws.readyState === 1 && (!onlyFor || ws.subs.has(onlyFor))) ws.send(s); };
 live.bus.on("pty", (id, data) => broadcast({ type: "pty", id, data }, id));
 live.bus.on("session", (summary, what) => broadcast({ type: "session", session: summary, what }));
-live.bus.on("transcript", (id, parsed) => broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30) }));
+live.bus.on("transcript", (id, parsed) => {
+  broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30), plan: parsed.plan || null });
+  midTurn(id, parsed);
+});
+
+// While a long turn runs, refresh the goal and flow every few tool calls or about once a minute,
+// so the current step moves without waiting for the turn to end.
+const MID_SEC = Number(process.env.GENUI_MIDTURN_SEC || 60), MID_TOOLS = Number(process.env.GENUI_MIDTURN_TOOLS || 6);
+const mid = new Map(); // id -> { at, tools, busy }
+function midTurn(id, parsed) {
+  const s = live.get(id);
+  if (!s || !s.alive || s.status !== "working" || !s.file) return;
+  const tools = parsed.events.filter((e) => e.role === "tool").length;
+  const m = mid.get(id) || { at: s.startedAt, tools: 0, busy: false };
+  mid.set(id, m);
+  const since = (Date.now() - m.at) / 1000, more = tools - m.tools;
+  if (m.busy || more <= 0 || !((more >= MID_TOOLS && since >= 25) || since >= MID_SEC)) return;
+  m.busy = true; m.at = Date.now(); m.tools = tools;
+  broadcast({ type: "gen-start", id, file: s.file, midTurn: true });
+  generate(s.harness, s.file, { midTurn: true })
+    .then((g) => { if (s.status === "working") broadcast({ type: "gen", id, file: s.file, gen: g }); else broadcast({ type: "gen-error", id, file: s.file, error: "turn ended" }); })
+    .catch((e) => { log("mid gen error", e.message); broadcast({ type: "gen-error", id, file: s.file, error: e.message }); })
+    .finally(() => { m.busy = false; });
+}
 side.bus.on("side", (s) => broadcast({ type: "side", side: s }));
 
 // Regenerate a live session's UI when a turn ends.
 const regen = new Map();
 live.bus.on("session", (summary, what) => {
   if (what !== "turn-end" || !summary.file) return;
+  const m = mid.get(summary.id); if (m) { m.at = Date.now(); }
   clearTimeout(regen.get(summary.id));
   regen.set(summary.id, setTimeout(async () => {
     broadcast({ type: "gen-start", id: summary.id, file: summary.file });

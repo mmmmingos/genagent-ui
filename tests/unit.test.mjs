@@ -67,3 +67,45 @@ test("small formatters", () => {
   assert.equal(kt(250000), "250k");
   assert.equal(ago(Date.now() - 5000), "now");
 });
+
+// ---- Growing flow and the agent's own task list ----
+import { mergeSteps, MAX_STEPS } from "../server/genui.js";
+
+test("Codex update_plan becomes the flow", () => {
+  const p = parseCodex([
+    { type: "response_item", payload: { type: "function_call", name: "update_plan", arguments: JSON.stringify({ plan: [{ step: "Make a.txt", status: "completed" }, { step: "Make b.txt", status: "in_progress" }, { step: "Make c.txt", status: "pending" }] }) } },
+  ]);
+  assert.deepEqual(p.plan, [{ label: "Make a.txt", state: "done" }, { label: "Make b.txt", state: "current" }, { label: "Make c.txt", state: "next" }]);
+});
+
+test("Claude TodoWrite becomes the flow, latest list wins", () => {
+  const todo = (items) => ({ type: "assistant", message: { content: [{ type: "tool_use", id: "t" + items.length, name: "TodoWrite", input: { todos: items } }] } });
+  const p = parseClaude([
+    todo([{ content: "A", status: "in_progress" }, { content: "B", status: "pending" }]),
+    todo([{ content: "A", status: "completed" }, { content: "B", status: "in_progress" }, { content: "C", status: "pending" }]),
+  ]);
+  assert.deepEqual(p.plan.map((x) => x.state), ["done", "current", "next"]);
+  assert.equal(p.plan.length, 3);
+});
+
+test("finished steps never move or disappear; new steps append", () => {
+  const prev = [{ label: "Read the brief", state: "done" }, { label: "Write the hero", state: "done" }, { label: "Get the price", state: "current" }];
+  // The model reworded and dropped finished steps and added new work.
+  const next = [{ label: "Read brief", state: "done" }, { label: "Get the price", state: "done" }, { label: "Write the FAQ", state: "current" }, { label: "Open a PR", state: "next" }];
+  const m = mergeSteps(prev, next);
+  assert.deepEqual(m.slice(0, 2).map((s) => s.label), ["Read the brief", "Write the hero"]);
+  assert.ok(m.some((s) => s.label === "Write the FAQ" && s.state === "current"));
+  assert.ok(m.length >= 4);
+  // capped
+  const many = Array.from({ length: 50 }, (_, i) => ({ label: "Step " + i, state: i < 49 ? "done" : "current" }));
+  assert.equal(mergeSteps(many, []).length, MAX_STEPS);
+});
+
+test("a reworded finished step is not duplicated", () => {
+  const prev = [{ label: "Step 1: create step-1.txt", state: "done" }, { label: "Step 2: create step-2.txt", state: "current" }];
+  const next = [{ label: "Step 1: create step-1.txt (contains \"1\")", state: "done" }, { label: "Step 2: create step-2.txt", state: "done" }, { label: "Step 3: create step-3.txt", state: "current" }];
+  const m = mergeSteps(prev, next);
+  assert.equal(m.filter((s) => /step-1/.test(s.label)).length, 1);
+  assert.equal(m[0].label, "Step 1: create step-1.txt");
+  assert.ok(m.some((s) => /step-3/.test(s.label)));
+});

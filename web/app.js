@@ -17,7 +17,7 @@ const api = async (path, body) => {
 const S = {
   harnesses: {}, labels: { claude: "Claude Code", codex: "Codex", grok: "Grok" },
   live: new Map(), saved: [],
-  gens: new Map(), genBusy: new Set(), genErr: new Map(),
+  gens: new Map(), genBusy: new Set(), genMid: new Set(), genErr: new Map(),
   views: new Map(), liveTail: new Map(),
   sel: null, page: "overview", tab: "flow", search: "",
   answers: new Map(),      // cardKey -> answer text (collected, not necessarily sent)
@@ -55,10 +55,10 @@ function connect() {
       if (msg.what === "turn-end" && !isOnScreen(s.id)) notify("Finished its turn", title(s), "ok", () => openLive(s.id), 5000);
       schedule(); return;
     }
-    if (msg.type === "transcript") { S.liveTail.set(msg.id, { last: msg.last, context: msg.context, count: msg.count }); schedule(); return; }
-    if (msg.type === "gen-start") { S.genBusy.add(msg.file); schedule(); return; }
-    if (msg.type === "gen") { mergeGen(msg.file, msg.gen); S.genBusy.delete(msg.file); schedule(); return; }
-    if (msg.type === "gen-error") { S.genBusy.delete(msg.file); schedule(); return; }
+    if (msg.type === "transcript") { S.liveTail.set(msg.id, { last: msg.last, context: msg.context, count: msg.count, plan: msg.plan }); schedule(); return; }
+    if (msg.type === "gen-start") { (msg.midTurn ? S.genMid : S.genBusy).add(msg.file); schedule(); return; }
+    if (msg.type === "gen") { mergeGen(msg.file, msg.gen); S.genBusy.delete(msg.file); S.genMid.delete(msg.file); schedule(); return; }
+    if (msg.type === "gen-error") { S.genBusy.delete(msg.file); S.genMid.delete(msg.file); schedule(); return; }
     if (msg.type === "side") { for (const sd of S.sides.values()) if (sd.data && sd.data.id === msg.side.id) { sd.data = msg.side; sd.busy = msg.side.busy; sd.err = msg.side.err || ""; } schedule(); scrollSide(); }
   };
 }
@@ -78,6 +78,7 @@ async function refresh(force) {
 // New generated cards replace old ones; answers that weren't sent yet carry over by title.
 function mergeGen(file, gen) {
   const old = S.gens.get(file);
+  if (gen.midTurn && old) { S.gens.set(file, { ...gen, cards: old.cards || [] }); return; }
   S.gens.set(file, gen);
   if (!old) return;
   // Cards are keyed by title, so a card that survives keeps its answer, picks and drafts as is.
@@ -169,11 +170,11 @@ function current() {
   if (S.sel.kind === "live") {
     const l = S.live.get(S.sel.id); if (!l) return null;
     const tail = S.liveTail.get(l.id) || {};
-    return { kind: "live", l, id: l.id, harness: l.harness, file: l.file, cwd: l.cwd, context: tail.context || l.context, events: tail.last || [], alive: l.alive, state: liveState(l) };
+    return { kind: "live", l, id: l.id, harness: l.harness, file: l.file, cwd: l.cwd, context: tail.context || l.context, events: tail.last || [], plan: tail.plan || null, alive: l.alive, state: liveState(l) };
   }
   const v = S.views.get(S.sel.file) || {};
   const sv = S.saved.find((s) => s.file === S.sel.file) || {};
-  return { kind: "saved", harness: S.sel.harness, file: S.sel.file, id: sv.id, cwd: v.cwd || sv.cwd, context: v.context || sv.context, events: v.events || [], total: v.total, title: v.title || sv.title, mtime: sv.mtime, pendingAsk: v.pendingAsk, loading: !S.views.has(S.sel.file), viewErr: v.error };
+  return { kind: "saved", harness: S.sel.harness, file: S.sel.file, id: sv.id, cwd: v.cwd || sv.cwd, context: v.context || sv.context, events: v.events || [], plan: v.plan || null, total: v.total, title: v.title || sv.title, mtime: sv.mtime, pendingAsk: v.pendingAsk, loading: !S.views.has(S.sel.file), viewErr: v.error };
 }
 const curSide = () => { const r = current(); return S.sideOpen && r ? S.sides.get(refKey(r)) : null; };
 
@@ -251,7 +252,8 @@ function goalCard(ref, g) {
   const stale = ref.kind === "live" ? (busy || (ref.l.lastActivity || 0) > (g.at || 0) + 1000) && ref.state !== "needs" && ref.state !== "run" : busy;
   const status = ref.kind === "live" ? (ref.state === "reading" ? "run" : ref.state) : g.status === "done" ? "done" : g.status === "waiting" ? "needs" : "idle";
   const statLabel = ref.kind === "live" ? STATE_LABEL[ref.state] : g.status === "done" ? "Done" : g.status === "waiting" ? "Was waiting" : "Saved";
-  const steps = g.steps || [];
+  // The agent's own task list wins when it keeps one: exact, and updated the moment it changes.
+  const steps = ref.plan && ref.plan.length ? ref.plan.map((p) => ({ label: p.label, state: p.state, note: "" })) : g.steps || [];
   let rows = steps.map((s, i) => ({ s, i }));
   let hiddenCount = 0;
   if (rows.length > 12 && !S.open.has("rail:" + ref.file)) { const firstCur = Math.max(0, steps.findIndex((s) => s.state !== "done")); hiddenCount = Math.max(0, Math.min(firstCur, rows.length - 10)); rows = rows.slice(hiddenCount); }
@@ -276,7 +278,7 @@ function goalCard(ref, g) {
   return `<section class="card" id="goal">
     <div class="ghead"><h2 title="${esc(g.goal)}">${esc(g.title)}</h2>
       <span class="stat ${STAT_CLS[status] || "idle"}"><i></i>${esc(statLabel)}</span>
-      <button class="ibtn sm" data-act="regen" title="${busy ? "Reading the session again" : `Goal and flow written by GenUI Agent from the transcript, ${esc(ago(g.at))}. Click to read it again.`}" aria-label="Regenerate">${busy ? `<span class="spin"></span>` : icon("refresh", "s14")}</button></div>
+      <button class="ibtn sm" data-act="regen" title="${busy || S.genMid.has(ref.file) ? "Reading the session again" : `${ref.plan ? "Steps from the agent's own task list. Goal" : "Goal and flow"} written by GenUI Agent from the transcript, ${esc(ago(g.at))}. Click to read it again.`}" aria-label="Regenerate">${busy || S.genMid.has(ref.file) ? `<span class="spin"></span>` : icon("refresh", "s14")}</button></div>
     <p class="goal-sub" title="${esc(g.goal)}">${esc(g.goal)}</p>
     <ol class="rail">
       ${hiddenCount ? `<li class="rrow done"><span class="rn"></span><button class="rl collapsed-rows" data-act="rail-expand">${plural(hiddenCount, "earlier step")} ${icon("chevd", "s12")}</button><span class="rm"></span></li>` : ""}

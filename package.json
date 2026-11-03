@@ -9,7 +9,8 @@
     "start": "node server/index.js",
     "test": "node --test tests/",
     "setup": "node scripts/install.mjs",
-    "test:e2e": "node tests/e2e-backend.mjs"
+    "test:e2e": "node tests/e2e-backend.mjs",
+    "test:flow": "node tests/e2e-flow.mjs"
   },
   "engines": {
     "node": ">=22"

@@ -33,6 +33,14 @@ function headTail(file, head = 24000, tail = 48000) {
   } catch { return { head: [], tail: [], size: 0 }; }
 }
 
+// The agent's own task list (Codex update_plan, Claude TodoWrite) as flow steps.
+const PLAN_STATE = { completed: "done", done: "done", in_progress: "current", inprogress: "current", active: "current", pending: "next", todo: "next" };
+export function toPlan(items) {
+  if (!Array.isArray(items) || !items.length) return null;
+  const steps = items.map((x) => ({ label: String(x.step || x.content || x.subject || x.title || "").trim(), state: PLAN_STATE[String(x.status || "").toLowerCase()] || "next" })).filter((x) => x.label);
+  return steps.length ? steps : null;
+}
+
 // ---- Claude Code --------------------------------------------------------------
 function claudeText(content) {
   if (typeof content === "string") return content;
@@ -42,7 +50,7 @@ function claudeText(content) {
 
 export function parseClaude(lines) {
   const events = [];
-  let cwd = "", title = "", usage = null, model = "", customTitle = "";
+  let cwd = "", title = "", usage = null, model = "", customTitle = "", plan = null;
   const answered = new Set();
   for (const l of lines) {
     if (l.type === "custom-title" && l.customTitle) customTitle = l.customTitle;
@@ -66,7 +74,10 @@ export function parseClaude(lines) {
       if (l.message.usage) usage = l.message.usage;
       for (const b of c) {
         if (b.type === "text" && b.text.trim()) events.push({ role: "assistant", text: b.text, t: l.timestamp });
-        if (b.type === "tool_use") events.push({ role: "tool", tool: b.name, input: b.input, id: b.id, t: l.timestamp });
+        if (b.type === "tool_use") {
+          events.push({ role: "tool", tool: b.name, input: b.input, id: b.id, t: l.timestamp });
+          if (b.name === "TodoWrite" && b.input) plan = toPlan(b.input.todos) || plan;
+        }
       }
     }
   }
@@ -79,13 +90,13 @@ export function parseClaude(lines) {
     const window = /\[1m\]/.test(model) || used > 200000 ? 1000000 : 200000;
     context = { used, window, pct: Math.min(100, Math.round((used / window) * 100)) };
   }
-  return { events, cwd, model, context, pendingAsk, title: customTitle || title || clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
+  return { events, cwd, model, context, pendingAsk, plan, title: customTitle || title || clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
 }
 
 // ---- Codex --------------------------------------------------------------------
 export function parseCodex(lines) {
   const events = [];
-  let cwd = "", id = "", context = null, model = "", turn = null;
+  let cwd = "", id = "", context = null, model = "", turn = null, plan = null;
   for (const l of lines) {
     const p = l.payload || {};
     // Codex marks each turn's start and end explicitly; that beats guessing from silence.
@@ -109,13 +120,14 @@ export function parseCodex(lines) {
         let input = p.arguments || p.input || p.action;
         try { if (typeof input === "string") input = JSON.parse(input); } catch {}
         events.push({ role: "tool", tool: p.name || p.type, input, t: l.timestamp });
+        if (p.name === "update_plan" && input && typeof input === "object") plan = toPlan(input.plan) || plan;
       }
       if (p.type === "function_call_output") events.push({ role: "tool_result", text: clip(typeof p.output === "string" ? p.output : JSON.stringify(p.output), 400), t: l.timestamp });
     }
     if (l.type === "turn_context" && p.model) model = p.model;
   }
   const firstUser = events.find((e) => e.role === "user");
-  return { events, cwd, id, model, context, turn, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
+  return { events, cwd, id, model, context, turn, plan, pendingAsk: null, title: clip(firstUser ? firstUser.text.replace(/\s+/g, " ") : "", 80) };
 }
 
 // ---- Grok ---------------------------------------------------------------------
