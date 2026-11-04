@@ -144,7 +144,9 @@ textarea, input { font: inherit; color: inherit; }
 .mf-done { fill: var(--grey-dot); } .mf-new { fill: var(--text-2); } .mf-amber { fill: var(--amber-dot); }
 .mf-line { stroke: var(--grey-line); stroke-width: 1.5; fill: none; }
 .mf-line.cur { stroke: var(--accent-line); }
-.mf-line.dash { stroke-dasharray: 3 3; }
+.mf-ring { fill: var(--bg-card); stroke: var(--text-2); stroke-width: 1.5; }
+.mf-spur { stroke: var(--text-3); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.mf-x { stroke: var(--text-3); stroke-width: 1.5; stroke-linecap: round; }
 .mf-look { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 2 2; }
 .mf-more { fill: var(--text-3); font: 500 11px var(--font-sans); }
 .mf-halo { fill: var(--amber-halo); } .mf-disc { fill: var(--amber-dot); } .mf-mark { stroke: #fff; stroke-width: 2; stroke-linecap: round; }
@@ -152,6 +154,8 @@ textarea, input { font: inherit; color: inherit; }
 .dlegend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); padding: 0 4px; }
 .dlegend span { display: inline-flex; align-items: center; gap: 6px; }
 .lg-look { width: 0; height: 12px; border-left: 1px dashed var(--text-3); }
+.lg-ring { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--text-2); }
+.lg-x { color: var(--text-3); font-size: 14px; line-height: 1; }
 
 /* All needs */
 .nlist { overflow: hidden; }
@@ -244,7 +248,15 @@ textarea, input { font: inherit; color: inherit; }
 .tree svg.lines path { fill: none; stroke-width: 1.5; }
 .ln-grey { stroke: var(--grey-line); } .ln-cur { stroke: var(--accent-line); } .ln-dash { stroke-dasharray: 3 3; }
 .trow { position: relative; min-height: 32px; display: flex; align-items: center; gap: 8px; padding-left: 48px; border-radius: 8px; }
-.trow.goal { min-height: 36px; }
+.trow.goal { min-height: 52px; margin-top: 4px; }
+.trow.goal .lab { display: flex; flex-direction: column; padding: 6px 0; }
+.trow.goal .eb { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--text-2); font-weight: 400; }
+.trow.goal .gq { font-weight: 600; }
+.trow.dropped .lab { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--text-4); }
+.nd.dropped { width: 12px; height: 12px; background: var(--bg-page); color: var(--text-3); display: grid; place-items: center; }
+.tkey { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 13px; line-height: 18px; color: var(--text-3); margin: -2px 0 10px; }
+.tkey span { display: inline-flex; align-items: center; gap: 6px; }
+.tkey .k-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--grey-dot); }
 .trow.step { cursor: pointer; }
 .trow.step:hover { background: var(--bg-row-active); }
 .trow.sel { background: var(--bg-row-active); }
@@ -279,6 +291,31 @@ textarea, input { font: inherit; color: inherit; }
 .ans { display: flex; align-items: center; gap: 8px; }
 .dacts { display: flex; gap: 12px; flex-wrap: wrap; }
 
+/* Discuss it: a side chat with its own agent */
+.sc { display: flex; flex-direction: column; gap: 14px; }
+.sc-head { display: flex; align-items: flex-start; gap: 6px; margin-left: -6px; }
+.sc-head .tt { display: flex; flex-direction: column; padding-top: 4px; }
+.sc-head b { font-weight: 600; font-size: 15px; line-height: 22px; }
+.sc-head small { font-size: 13px; line-height: 18px; color: var(--text-2); }
+.sc-q { padding: 12px 14px; }
+.opt.static { cursor: default; font-weight: 400; }
+.opt.static:hover { background: var(--bg-raised); }
+.sc-msgs { display: flex; flex-direction: column; gap: 14px; }
+.sc-empty { font-size: 14px; line-height: 21px; color: var(--text-2); }
+.sc-sugg { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; }
+.sc-me { align-self: flex-end; max-width: 85%; background: var(--bg-raised); border-radius: 14px; padding: 8px 12px; font-size: 14px; line-height: 21px; }
+.sc-ai { font-size: 14px; line-height: 22px; }
+.sc-ai .who { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.sc-compose { display: flex; gap: 8px; align-items: flex-end; border: 1px solid var(--border-strong); border-radius: 16px; padding: 8px 8px 8px 12px; background: var(--bg-card); }
+.sc-compose:focus-within { border-color: var(--accent); box-shadow: var(--accent-ring); }
+.sc-compose textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; font-size: 14px; line-height: 21px; min-height: 42px; }
+.send { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; flex: none; }
+.send[disabled] { opacity: .45; cursor: default; }
+.sc-actions { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; color: var(--text-3); }
+.sc-actions .sp { flex: 1; }
+.sides .srow2 { width: 100%; border-radius: 8px; padding: 0 6px; margin-left: -6px; }
+.sides button.srow2:hover { background: var(--bg-row-active); color: var(--text-1); }
+.sides .srow2 .tl2 { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sides .srow2 { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); height: 30px; }
 .sides .srow2 .ic { color: var(--text-3); }
 
@@ -331,7 +368,10 @@ const AGENTS = [
         { id: "s6", l: "Start the preview", t: "11:05am", sum: "Started the dev server so you can look at the page.", cmds: [["npm run dev", "localhost:3000"]], said: "The new page is up at localhost:3000/pricing." },
       ] },
       { id: "g1", label: "also add a monthly / yearly toggle", by: "You · 12:40pm", steps: [
-        { id: "s7", l: "Read Toggle.tsx", t: "12:41pm", sum: "Checked the site's existing toggle so the switch matches it.", files: [["components/ui/Toggle.tsx"]] },
+        { id: "s7", l: "Read Toggle.tsx", t: "12:41pm", sum: "Checked the site's existing toggle component.", files: [["components/ui/Toggle.tsx"]] },
+        { id: "s7b", l: "Build a billing-period dropdown", t: "12:47pm", dropped: true, why: "You asked for a switch instead at 12:49pm, so this was set aside. The file was deleted.", sum: "Started a Monthly / Yearly dropdown above the table.", files: [["components/BillingSelect.tsx", "+41"]] },
+      ] },
+      { id: "g1b", kind: "turn", label: "no, a switch like the one in settings", by: "You · 12:49pm", steps: [
         { id: "s8", l: "Edit PricingTable.tsx ×3", t: "12:58pm", sum: "Added the Monthly / Yearly switch. Yearly prices show the saving under each price.", files: [["components/PricingTable.tsx", "+57 −12"]] },
         { id: "s9", l: "Asked what yearly discount to show", t: "1:15pm", sum: "Asked about the yearly discount, then carried on with 20% off in the meantime.",
           ask: { q: "What yearly discount should the toggle show?", needs: ["n1"] }, said: "I've used 20% off for now. Tell me if it should be different." },
@@ -351,10 +391,12 @@ const AGENTS = [
       { id: "n1", step: "s9", key: "Yearly discount", eyebrow: "Discount", when: "1:15pm", open: "2h 51m", old: true,
         q: "What yearly discount should the toggle show?", ctx: "Claude Code used 20% off for now and carried on.",
         opts: [["20% off", "as built"], ["2 months free"], ["15% off"]],
+        chat: ["Every price on the page today is a whole dollar. $490 keeps that; $470.40 breaks it. 15% off gives $499.80, which has the same problem."],
         side: { text: "20% off makes Pro $470.40 a year. 2 months free makes it $490: a rounder price, and it's how most pricing pages say it. I'd pick 2 months free.", pick: "2 months free" } },
       { id: "n2", step: "s14", key: "Enterprise FAQ entries", eyebrow: "FAQ", when: "2:04pm", open: "2h 2m",
         q: "Remove the 3 Enterprise FAQ entries, or rewrite them under Business?", ctx: "They cover SSO, invoicing and the SLA. Enterprise isn't on the new page.",
         opts: [["Remove them"], ["Rewrite under Business"]],
+        chat: ["If the SLA entry goes, someone searching the FAQ for “uptime” finds nothing. You could keep one line saying an SLA is available on Business by request."],
         side: { text: "lib/plans.ts already lists SSO and invoicing under Business. Only the SLA has no plan. I'd rewrite those 2 under Business and remove the SLA entry.", pick: "Rewrite SSO and invoicing under Business; remove the SLA entry" } },
       { id: "n3", step: "s14", key: "Preview branch", eyebrow: "Branch", when: "2:04pm", open: "2h 2m",
         q: "Should I push this to the preview branch?", ctx: "You'd get a link you can share.",
@@ -471,8 +513,8 @@ const AGENTS = [
 ];
 
 // Runtime state, per agent and for the page.
-for (const a of AGENTS) { a.ans = {}; a.elseOpen = {}; a.side = {}; a.text = null; a.edited = false; a.seen = false; a.sent = 0; for (const n of a.needs) n.done = false; }
-const S = { view: "dash", id: null, tab: "agents", open: new Set(), focus: null };
+for (const a of AGENTS) { a.ans = {}; a.elseOpen = {}; a.side = {}; a.chats = {}; a.worked = {}; a.text = null; a.edited = false; a.seen = false; a.sent = 0; for (const n of a.needs) n.done = false; }
+const S = { view: "dash", id: null, tab: "agents", open: new Set(), focus: null, side: null };
 
 // ---- Helpers ----
 const $ = (s, r = document) => r.querySelector(s);
@@ -498,6 +540,8 @@ const ICON = {
   away: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>',
   bang: '<path d="M8 4v4.5M8 11.2v.1"/>',
   up: '<path d="M8 13V3.5M4 7.5l4-4 4 4"/>',
+  turn: '<path d="M3.5 13.5V9a3.5 3.5 0 0 1 3.5-3.5h6M10 2.5l3 3-3 3"/>',
+  x: '<path d="m4 4 8 8M12 4l-8 8"/>',
 };
 const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 let toastT;
@@ -524,42 +568,34 @@ function renderSide() {
 
 // ---- Dashboard: the mini branches flow for one agent ----
 function miniFlow(a) {
-  const nodes = [];
-  a.goals.forEach((g, gi) => g.steps.forEach((s) => nodes.push({ gi, s })));
-  const W = 236, pitch = 20, maxN = 10;
-  const hidden = Math.max(0, nodes.length - maxN), vis = nodes.slice(hidden);
-  const x0 = hidden ? 30 : 8, yOf = (gi) => (gi === 0 ? 12 : 32);
-  vis.forEach((n, i) => { n.x = x0 + i * pitch; n.y = yOf(n.gi); });
-  const lastGi = a.goals.length - 1;
-  let svg = "";
-  // Lines: the trunk, then each branch leaving it on an S-curve.
-  const byG = (gi) => vis.filter((n) => n.gi === gi);
-  const trunk = byG(0);
-  const branchStarts = a.goals.map((_, gi) => byG(gi)[0]).filter((n, gi) => gi > 0 && n);
-  const tEnd = trunk.length ? trunk.at(-1).x : x0 - 10;
-  if (trunk.length) svg += `<path class="mf-line ${lastGi === 0 ? "cur" : ""}" d="M${trunk[0].x},12 H${tEnd}"/>`;
-  if (branchStarts.length) svg += `<path class="mf-line dash" d="M${Math.max(tEnd, x0 - 10)},12 H${branchStarts.at(-1).x - pitch}"/>`;
-  a.goals.forEach((g, gi) => {
-    if (!gi) return; const ns = byG(gi); if (!ns.length) return;
-    const f = ns[0], from = f.x - pitch;
-    svg += `<path class="mf-line ${gi === lastGi ? "cur" : ""}" d="M${from},12 C${from + 10},12 ${f.x - 10},32 ${f.x},32 H${ns.at(-1).x}"/>`;
-  });
-  if (hidden) svg += `<text class="mf-more" x="0" y="16">+${hidden}</text>`;
-  // Where you left off: a dashed tick before the first step that is new to you.
-  const firstNew = vis.findIndex((n) => n.s.new && !a.seen);
-  if (firstNew > 0) { const x = vis[firstNew].x - pitch / 2; svg += `<line class="mf-look" x1="${x}" y1="2" x2="${x}" y2="42"><title>You looked at ${LEFT}</title></line>`; }
+  // One straight line, oldest on the left: a ring for each of your messages, a dot for each step,
+  // a short spur with × for work that was dropped when you changed direction.
+  const items = [];
+  a.goals.forEach((g, gi) => { items.push({ g, gi, goal: true }); g.steps.forEach((s) => items.push({ s, gi })); });
+  const W = 236, pitch = 16, maxN = 13, y = 26;
+  const hidden = Math.max(0, items.length - maxN), vis = items.slice(hidden);
+  const x0 = hidden ? 30 : 8;
+  vis.forEach((n, i) => (n.x = x0 + i * pitch));
+  let svg = `<path class="mf-line" d="M${vis[0].x},${y} H${vis.at(-1).x}"/>`;
+  const curStart = vis.find((n) => n.goal && n.gi === a.goals.length - 1);
+  if (curStart) svg += `<path class="mf-line cur" d="M${curStart.x},${y} H${vis.at(-1).x}"/>`;
+  if (hidden) svg += `<text class="mf-more" x="0" y="${y + 4}">+${hidden}</text>`;
+  const firstNew = vis.findIndex((n) => n.s && n.s.new && !a.seen);
+  if (firstNew > 0) { const x = vis[firstNew].x - pitch / 2; svg += `<line class="mf-look" x1="${x}" y1="6" x2="${x}" y2="42"><title>You looked at ${LEFT}</title></line>`; }
   for (const n of vis) {
+    if (n.goal) { svg += `<circle class="mf-ring" cx="${n.x}" cy="${y}" r="4.5"><title>You: ${esc(n.g.label)}</title></circle>`; continue; }
     const s = n.s, label = esc(s.l);
+    if (s.dropped) { svg += `<g><title>Dropped: ${label}</title><path class="mf-spur" d="M${n.x - pitch},${y} L${n.x},${y - 13}"/><path class="mf-x" d="M${n.x - 3},${y - 16} l6,6 M${n.x + 3},${y - 16} l-6,6"/></g>`; continue; }
     if (s.current) {
-      if (a.state === "needs") svg += `<g><title>${label}</title><circle class="mf-halo" cx="${n.x}" cy="${n.y}" r="10"/><circle class="mf-disc" cx="${n.x}" cy="${n.y}" r="7"/><path class="mf-mark" d="M${n.x},${n.y - 3} V${n.y + 0.6} M${n.x},${n.y + 3.2} v0.1"/></g>`;
-      else if (a.state === "working") svg += `<g><title>${label}</title><circle class="mf-work" cx="${n.x}" cy="${n.y}" r="4"/><path class="mf-orbit" d="M${n.x + 8},${n.y} A8,8 0 1 1 ${n.x - 2.8},${n.y - 7.5}"><animateTransform attributeName="transform" type="rotate" from="0 ${n.x} ${n.y}" to="360 ${n.x} ${n.y}" dur="0.8s" repeatCount="indefinite"/></path></g>`;
-      else svg += `<g><title>${label}</title><circle class="mf-turn" cx="${n.x}" cy="${n.y}" r="6"/></g>`;
+      if (a.state === "needs") svg += `<g><title>${label}</title><circle class="mf-halo" cx="${n.x}" cy="${y}" r="10"/><circle class="mf-disc" cx="${n.x}" cy="${y}" r="7"/><path class="mf-mark" d="M${n.x},${y - 3} V${y + 0.6} M${n.x},${y + 3.2} v0.1"/></g>`;
+      else if (a.state === "working") svg += `<g><title>${label}</title><circle class="mf-work" cx="${n.x}" cy="${y}" r="4"/><path class="mf-orbit" d="M${n.x + 8},${y} A8,8 0 1 1 ${n.x - 2.8},${y - 7.5}"><animateTransform attributeName="transform" type="rotate" from="0 ${n.x} ${y}" to="360 ${n.x} ${y}" dur="0.8s" repeatCount="indefinite"/></path></g>`;
+      else svg += `<g><title>${label}</title><circle class="mf-turn" cx="${n.x}" cy="${y}" r="6"/></g>`;
     } else {
       const amber = s.ask && s.ask.needs && s.ask.needs.some((id) => !a.needs.find((x) => x.id === id).done);
-      svg += `<circle class="${amber ? "mf-amber" : s.new && !a.seen ? "mf-new" : "mf-done"}" cx="${n.x}" cy="${n.y}" r="${amber ? 4.5 : 3.5}"><title>${label}</title></circle>`;
+      svg += `<circle class="${amber ? "mf-amber" : s.new && !a.seen ? "mf-new" : "mf-done"}" cx="${n.x}" cy="${y}" r="${amber ? 4.5 : 3.5}"><title>${label}</title></circle>`;
     }
   }
-  return `<svg width="${W}" height="44" viewBox="0 0 ${W} 44" role="img" aria-label="${a.goals.length} goals, ${nodes.length} steps">${svg}</svg>`;
+  return `<svg width="${W}" height="44" viewBox="0 0 ${W} 44" role="img" aria-label="${plural(a.goals.length, "request")}, ${plural(items.length - a.goals.length, "step")}">${svg}</svg>`;
 }
 
 function agentRow(a) {
@@ -570,7 +606,7 @@ function agentRow(a) {
   return `<div class="arow" role="button" tabindex="0" data-act="open" data-id="${a.id}">
     <div style="min-width:0">
       <div class="ar-t"><span class="dot ${a.state}"></span><span class="tt">${esc(a.title)}</span></div>
-      <div class="ar-sub">${esc(a.repo)} · ${esc(a.harness)} · ${plural(a.goals.length, "goal")}</div>
+      <div class="ar-sub">${esc(a.repo)} · ${esc(a.harness)} · ${plural(a.goals.length, "request")}</div>
       <div class="ar-l"><span class="k">Did</span><span class="v">${esc(a.did)}</span></div>
       ${line2}
     </div>
@@ -588,7 +624,7 @@ function renderDash() {
   const asking = AGENTS.filter((a) => openNeeds(a).length).length;
   const body = S.tab === "agents"
     ? `<div class="card rows">${sorted().map(agentRow).join("")}</div>
-       <div class="dlegend"><span><span class="dot needs"></span>Needs you</span><span><span class="dot turn"></span>Your turn</span><span><span class="dot working"></span>Working</span><span><span class="lg-look"></span>Where you left off</span><span>Top line: first goal · lower line: later requests</span></div>`
+       <div class="dlegend"><span><span class="dot needs"></span>Needs you</span><span><span class="dot turn"></span>Your turn</span><span><span class="dot working"></span>Working</span><span><span class="lg-look"></span>Where you left off</span><span><span class="lg-ring"></span>Your message</span><span><span class="lg-x">×</span>Dropped</span></div>`
     : allNeeds();
   $("#main").innerHTML = `<div class="dash enter">
     <div class="dhead">
@@ -632,7 +668,7 @@ function termLines(a) {
         if (s.l.startsWith("Asks") || s.ask || s.said) { a.tail.forEach((t, i) => L.push({ c: i ? "ind m" : "m", t: i ? t : `${b} ${t}` })); }
       } else if (s.term) { L.push({ c: "b", t: `${b} ${s.term[0]}` }); L.push({ c: "r", t: `⎿  ${s.term[1]}` }); }
       else if (s.cmds) { for (const [cmd, res] of s.cmds) { L.push({ c: "b", t: `${b} Bash(${cmd})` }); L.push({ c: /passed|compiled|match/.test(res) ? "ok" : "r", t: `⎿  ${res}` }); } }
-      else if (s.files) { const f = s.files[0]; const verb = /^Read/.test(s.l) ? "Read" : /^Write|^Draft|^Add/.test(s.l) ? "Write" : "Update"; L.push({ c: "b", t: `${b} ${verb}(${f[0]})` }); L.push({ c: "r", t: `⎿  ${f[1] ? f[1].replace("−", "-") : s.files.length > 1 ? `${s.files.length} files` : "Read 1 file"}` }); }
+      else if (s.files) { const f = s.files[0]; const verb = /^Read/.test(s.l) ? "Read" : /^Write|^Draft|^Add|^Build/.test(s.l) ? "Write" : "Update"; L.push({ c: "b", t: `${b} ${verb}(${f[0]})` }); L.push({ c: "r", t: `⎿  ${f[1] ? f[1].replace("−", "-") : s.files.length > 1 ? `${s.files.length} files` : "Read 1 file"}` }); }
       else if (s.ask && s.ask.a) { L.push({ c: "b am", t: `${b} ${s.ask.q}` }); L.push({ c: "u", t: `> ${s.ask.a}` }); }
       else L.push({ c: "b", t: `${b} ${s.l}` });
       if (s.said && !s.current) L.push({ c: "m", t: `${b} ${s.said}` });
@@ -684,9 +720,9 @@ function needHTML(a, n, i) {
     <div class="opts">${n.opts.map(opt).join("")}
       ${isElse ? `<textarea class="elsein" rows="1" data-else="${n.id}" id="else-${n.id}" placeholder="Type your own answer" aria-label="Your own answer">${esc(isElse && ans && !n.opts.some((o) => o[0] === ans) ? ans : "")}</textarea>` : `<button class="opt else" data-act="else" data-need="${n.id}">Something else</button>`}
     </div>
-    ${sd && sd.busy ? `<div class="side-draft enter"><div class="h"><span class="spin"></span><span class="shine">Reading the session and the files</span></div></div>` : ""}
-    ${sd && sd.text ? `<div class="side-draft enter"><div class="h">${icon("chat", "s14")}Side agent · read the whole session</div>${esc(sd.text)}<div class="acts"><button class="btn btn-tint sm" data-act="use-side" data-need="${n.id}">Use this</button><button class="btn btn-text sm" data-act="toast-side">Keep talking</button></div></div>` : ""}
-    <div class="nfoot">${!sd ? `<button class="btn btn-neutral sm" data-act="discuss" data-need="${n.id}" title="A side agent that knows this session works it out with you">${icon("chat", "s14")}Discuss it</button>` : ""}<span class="sp"></span>${ans ? `<span class="t3" style="font-size:13px">In your reply</span>` : ""}</div>
+
+
+    <div class="nfoot"><button class="btn btn-neutral sm" data-act="discuss" data-need="${n.id}" title="Talk it through with a side agent that knows this session">${icon("chat", "s14")}${a.chats[n.id] && a.chats[n.id].msgs.length ? "Continue discussion" : "Discuss it"}</button>${a.worked[n.id] ? `<span class="t3" style="font-size:13px">Worked out on the side</span>` : ""}<span class="sp"></span>${ans ? `<span class="t3" style="font-size:13px">In your reply</span>` : ""}</div>
   </div>`;
 }
 
@@ -726,50 +762,80 @@ function detailHTML(a, s) {
   return `<div class="tdetail enter">${parts.join("")}</div>`;
 }
 
+const EYEBROW = { start: ["chat", "You started"], new: ["chat", "You asked"], turn: ["turn", "You changed direction"] };
 function treeHTML(a) {
+  // One line, top to bottom, in the order things happened. Each message you sent starts a section;
+  // work set aside when you changed direction steps off the line with a ×.
   const lastG = a.goals.length - 1;
   let awayShown = false, h = "";
   a.goals.forEach((g, gi) => {
-    const lane = gi === 0 ? 11 : 29;
-    h += `<div class="trow goal" data-g="${gi}" data-lane="${lane}"><span class="nd goal ${gi === lastG ? "cur" : ""}" style="left:${lane}px"></span><span class="lab">${gi ? `<span class="br">${icon("branch", "s14")}</span>` : ""}${esc(g.label)}</span><span class="rm">${esc(g.by)}</span></div>`;
+    const [ic, word] = EYEBROW[g.kind || (gi ? "new" : "start")];
+    h += `<div class="trow goal" data-g="${gi}"><span class="nd goal ${gi === lastG ? "cur" : ""}" style="left:11px"></span><span class="lab"><span class="eb">${icon(ic, "s12")}${word} · ${esc(g.by.replace(/^You · /, ""))}</span><span class="gq">“${esc(g.label)}”</span></span></div>`;
     for (const s of g.steps) {
       if (s.new && !awayShown) { awayShown = true; h += `<div class="awayrow">Since you were away · ${LEFT}</div>`; }
       const amber = s.ask && s.ask.needs && s.ask.needs.some((id) => !a.needs.find((n) => n.id === id).done);
-      const nd = s.current ? a.state : amber ? "amber" : "done";
-      const cls = ["trow", "step", s.current && a.state === "needs" ? "amber" : amber ? "amber" : "", S.open.has(s.id) ? "sel" : ""].join(" ");
+      const nd = s.dropped ? "dropped" : s.current ? a.state : amber ? "amber" : "done";
+      const lane = s.dropped ? 29 : 11;
+      const cls = ["trow", "step", s.dropped ? "dropped" : "", (s.current && a.state === "needs") || amber ? "amber" : "", S.open.has(s.id) ? "sel" : ""].join(" ");
       const label = s.current && a.state === "working" ? `<span class="shine">${esc(s.l)}</span>` : esc(s.l);
-      const meta = s.current && a.state === "working" && a.count ? `<span class="num t2">${esc(a.count)}</span>` : `<span class="num">${esc(s.t || "")}</span>`;
-      h += `<div class="${cls}" data-act="step" data-step="${s.id}" data-g="${gi}" data-lane="${lane}" id="st-${s.id}" role="button" tabindex="0" aria-expanded="${S.open.has(s.id)}">
-        <span class="nd ${nd}" style="left:${lane}px">${nd === "needs" ? `<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">${ICON.bang}</svg>` : ""}</span>
+      const meta = s.dropped ? `<span>dropped</span>` : s.current && a.state === "working" && a.count ? `<span class="num t2">${esc(a.count)}</span>` : `<span class="num">${esc(s.t || "")}</span>`;
+      const glyph = nd === "needs" ? `<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">${ICON.bang}</svg>` : nd === "dropped" ? icon("x", "s12") : "";
+      h += `<div class="${cls}" data-act="step" data-step="${s.id}" data-g="${gi}" id="st-${s.id}" role="button" tabindex="0" aria-expanded="${S.open.has(s.id)}">
+        <span class="nd ${nd}" style="left:${lane}px">${glyph}</span>
         <span class="lab">${label}</span><span class="rm">${s.new && !a.seen ? `<span class="nw" title="New since you looked"></span>` : ""}${meta}${icon("chev", "s12 chev")}</span></div>`;
       if (S.open.has(s.id)) h += detailHTML(a, s);
     }
   });
-  return `<div class="tree" id="tree"><svg class="lines" id="tlines"></svg>${h}</div>`;
+  return `<div class="tkey"><span><span class="lg-ring"></span>Your message</span><span><span class="k-dot"></span>A step</span><span title="Work set aside when you changed direction"><span class="lg-x">×</span>Dropped</span></div>
+    <div class="tree" id="tree"><svg class="lines" id="tlines"></svg>${h}</div>`;
 }
 
-// Draw the git-graph lines from where the rows actually sit, so opened steps stretch them.
+// Draw the line from where the rows actually sit, so opened steps stretch it.
 function drawLines() {
   const tree = $("#tree"), svg = $("#tlines"); if (!tree || !svg) return;
   const a = byId(S.id), lastG = a.goals.length - 1;
   const mid = (el) => el.offsetTop + el.offsetHeight / 2;
   const rows = [...tree.querySelectorAll(".trow")];
-  const G = a.goals.map((_, gi) => rows.filter((r) => +r.dataset.g === gi));
+  const main = rows.filter((r) => !r.classList.contains("dropped"));
+  const top = mid(main[0]), bot = mid(main.at(-1));
+  const cur = rows.find((r) => r.classList.contains("goal") && +r.dataset.g === lastG);
   let d = "";
-  const path = (cls, dd) => (d += `<path class="${cls}" d="${dd}"/>`);
-  const t = G[0], tTop = mid(t[0]), tBot = mid(t.at(-1));
-  path(lastG === 0 ? "ln-cur" : "ln-grey", `M11,${tTop} V${tBot}`);
-  if (lastG > 0) path("ln-grey ln-dash", `M11,${tBot} V${mid(G[lastG][0]) - 26}`);
-  for (let gi = 1; gi <= lastG; gi++) {
-    const top = mid(G[gi][0]), bot = mid(G[gi].at(-1)), y0 = top - 26;
-    path(gi === lastG ? "ln-cur" : "ln-grey", `M11,${y0} C11,${y0 + 14} 29,${top - 12} 29,${top} V${bot}`);
+  // The current request's stretch is blue; everything before it is grey.
+  if (cur && lastG > 0) d += `<path class="ln-grey" d="M11,${top} V${mid(cur)}"/><path class="ln-cur" d="M11,${mid(cur)} V${bot}"/>`;
+  else d += `<path class="ln-cur" d="M11,${top} V${bot}"/>`;
+  for (const r of rows.filter((r) => r.classList.contains("dropped"))) {
+    const y = mid(r);
+    d += `<path class="ln-grey ln-dash" d="M11,${y - 26} C11,${y - 12} 29,${y - 16} 29,${y - 6}"/>`;
   }
   svg.setAttribute("height", tree.offsetHeight);
   svg.innerHTML = d;
 }
 
+// Discuss it: its own side agent (a copy of this session) to talk the question through with you.
+const SUGG = ["What would you recommend?", "What has it built for this so far?", "What changes if I pick the other option?"];
+function sideChatHTML(a, n) {
+  const c = a.chats[n.id] || (a.chats[n.id] = { msgs: [], draft: "" });
+  const i = a.needs.indexOf(n), hasAi = c.msgs.some((m) => m.who === "ai");
+  return `<div class="sc">
+    <div class="sc-head"><button class="ibtn" data-act="side-close" aria-label="Back" title="Back to what it needs">${icon("back")}</button>
+      <div class="tt"><b>Discuss it</b><small>A side agent with a copy of this session. ${esc(a.harness)} won't see any of this unless you send it.</small></div></div>
+    <div class="card sc-q"><div class="nh"><span>Question ${i + 1} of ${a.needs.length}</span><span class="sp"></span>${n.old ? `<span class="old">open ${esc(n.open)}</span>` : `<span class="num">${esc(n.when)}</span>`}</div>
+      <div class="nq">${esc(n.q)}</div><div class="nc">${esc(n.ctx)}</div>
+      <div class="opts">${n.opts.map(([l, q]) => `<span class="opt static">${esc(l)}${q ? `<span class="q2">${esc(q)}</span>` : ""}</span>`).join("")}</div></div>
+    <div class="sc-msgs">
+      ${!c.msgs.length ? `<div class="sc-empty">Ask anything about this question, over as many messages as you like. The side agent has read the whole session and can open the project's files. When you're ready, it writes the answer into your reply.</div>
+        <div class="sc-sugg">${SUGG.map((t) => `<button class="opt" data-act="side-sugg" data-t="${esc(t)}">${esc(t)}</button>`).join("")}</div>` : ""}
+      ${c.msgs.map((m) => m.who === "me" ? `<div class="sc-me enter">${esc(m.text)}</div>` : `<div class="sc-ai enter"><div class="who">${icon("chat", "s12")}Side agent</div>${esc(m.text)}</div>`).join("")}
+      ${c.busy ? `<div class="sc-ai"><div class="who"><span class="spin"></span><span class="shine">${esc(c.busy)}</span></div></div>` : ""}
+    </div>
+    <div class="sc-compose"><textarea id="sc-in" rows="2" placeholder="What's unclear?" aria-label="Message the side agent">${esc(c.draft)}</textarea><button class="send" data-act="side-send" aria-label="Send" ${c.busy ? "disabled" : ""}>${icon("up")}</button></div>
+    <div class="sc-actions"><span>${hasAi ? "The answer goes into your reply, for you to check before sending." : ""}</span><span class="sp"></span><button class="btn btn-tint" data-act="side-answer" data-need="${n.id}" ${hasAi && !c.busy ? "" : "disabled"}>Answer with this</button></div>
+  </div>`;
+}
+
 function renderRail() {
   const a = byId(S.id), rail = $("#rail"), keep = rail.scrollTop;
+  if (S.side) { rail.innerHTML = sideChatHTML(a, a.needs.find((n) => n.id === S.side)); rail.scrollTop = rail.scrollHeight; return; }
   const ns = openNeeds(a), nw = newSteps(a);
   const awayNews = nw.filter((s) => !s.current).map((s) => s.sum.replace(/\.$/, "")).slice(0, 2);
   const steps = allSteps(a).length;
@@ -782,12 +848,19 @@ function renderRail() {
     ${nw.length ? `<div class="away"><div class="h">${icon("away", "s14")}While you were away · ${AWAY}</div><p>${plural(nw.length, "new step")}. ${esc(awayNews.join(". "))}${awayNews.length ? "." : ""}${ns.length ? ` It asked ${plural(ns.filter((n) => !n.old).length || ns.length, "question")}.` : ""}</p></div>` : ""}
     ${needsSec}
     <section>
-      <div class="rsec-h">Flowchart <span class="t3">${plural(a.goals.length, "goal")} · ${plural(steps, "step")}</span><span class="sp"></span><span class="t3">click a step to see it</span></div>
+      <div class="rsec-h">Flowchart <span class="t3">${plural(a.goals.length, "request")} · ${plural(steps, "step")}</span><span class="sp"></span><span class="t3">click a step to see it</span></div>
       ${treeHTML(a)}
     </section>
-    ${a.id === "pricing" ? `<section class="sides"><div class="rsec-h">On the side</div><div class="srow2">${icon("chat", "s14")}Is 3 plans enough for small teams? <span class="t3">· 11:40am</span></div></section>` : ""}`;
+    ${sidesHTML(a)}`;
   rail.scrollTop = keep;
   drawLines();
+}
+
+// Side chats stay listed under the flowchart; click one to pick it up again.
+function sidesHTML(a) {
+  const rows = a.needs.filter((n) => a.chats[n.id] && a.chats[n.id].msgs.length).map((n) => `<button class="srow2" data-act="discuss" data-need="${n.id}">${icon("chat", "s14")}<span class="tl2">${esc(n.q)}</span><span class="t3">${plural(a.chats[n.id].msgs.length, "message")}</span></button>`);
+  if (a.id === "pricing") rows.push(`<div class="srow2">${icon("chat", "s14")}<span class="tl2">Is 3 plans enough for small teams?</span><span class="t3">11:40am</span></div>`);
+  return rows.length ? `<section class="sides"><div class="rsec-h">On the side</div>${rows.join("")}</section>` : "";
 }
 
 function render() {
@@ -817,10 +890,14 @@ function send(a) {
   }, 700);
 }
 
-function discuss(a, id) {
-  const n = a.needs.find((x) => x.id === id);
-  a.side[id] = { busy: true }; renderRail();
-  setTimeout(() => { a.side[id] = { text: n.side.text, pick: n.side.pick }; renderRail(); }, 1500);
+function sideReply(a, n, text) {
+  const c = a.chats[n.id]; if (!text || c.busy) return;
+  c.msgs.push({ who: "me", text }); c.draft = ""; c.busy = "Reading the session and the files"; renderRail();
+  setTimeout(() => {
+    const k = c.msgs.filter((m) => m.who === "ai").length, pool = [n.side.text, ...(n.chat || [])];
+    c.msgs.push({ who: "ai", text: pool[k] || `Taking that into account, I'd still go with “${n.side.pick}”. Press Answer with this when you're happy and I'll write it into your reply.` });
+    c.busy = null; renderRail(); $("#sc-in")?.focus();
+  }, 1400);
 }
 
 function gotoStep(a, stepId) {
@@ -838,17 +915,31 @@ document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-act]"); if (!t) return;
   const act = t.dataset.act, a = S.id ? byId(S.id) : null;
   switch (act) {
-    case "dash": if (S.view === "sess" && a) a.seen = true; S.view = "dash"; S.open.clear(); render(); $("#main").scrollTop = 0; break;
-    case "open": if (S.view === "sess" && a && a.id !== t.dataset.id) a.seen = true; S.view = "sess"; S.id = t.dataset.id; S.open.clear(); render(); break;
+    case "dash": if (S.view === "sess" && a) a.seen = true; S.side = null; S.view = "dash"; S.open.clear(); render(); $("#main").scrollTop = 0; break;
+    case "open": if (S.view === "sess" && a && a.id !== t.dataset.id) a.seen = true; S.view = "sess"; S.id = t.dataset.id; S.side = null; S.open.clear(); render(); break;
     case "tab": S.tab = t.dataset.tab; renderDash(); break;
     case "goto-need": e.stopPropagation(); if (S.view === "sess" && S.id === t.dataset.id) { const el = $(`#need-${t.dataset.need}`); if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("focus"); setTimeout(() => el.classList.remove("focus"), 2400); } } else gotoNeed(t.dataset.id, t.dataset.need); break;
     case "step": if (e.target.closest(".lnk")) break; S.open.has(t.dataset.step) ? S.open.delete(t.dataset.step) : S.open.add(t.dataset.step); renderRail(); break;
     case "goto-step": gotoStep(a, t.dataset.step); break;
     case "opt": { const id = t.dataset.need; a.elseOpen[id] = false; setAnswer(a, id, a.ans[id] === t.dataset.v ? undefined : t.dataset.v); if (a.ans[id] === undefined) delete a.ans[id]; renderRail(); break; }
     case "else": a.elseOpen[t.dataset.need] = true; delete a.ans[t.dataset.need]; renderRail(); setTimeout(() => $(`#else-${t.dataset.need}`)?.focus(), 20); break;
-    case "discuss": discuss(a, t.dataset.need); break;
-    case "use-side": { const id = t.dataset.need, sd = a.side[id], n = a.needs.find((x) => x.id === id); a.elseOpen[id] = !n.opts.some((o) => o[0] === sd.pick); setAnswer(a, id, sd.pick); renderRail(); break; }
-    case "toast-side": toast(`${icon("chat", "s14")}In the app this opens the side conversation, with this draft in it.`); break;
+    case "discuss": S.side = t.dataset.need; renderRail(); $("#rail").scrollTop = 0; setTimeout(() => $("#sc-in")?.focus(), 30); break;
+    case "side-close": S.side = null; renderRail(); break;
+    case "side-sugg": sideReply(a, a.needs.find((n) => n.id === S.side), t.dataset.t); break;
+    case "side-send": sideReply(a, a.needs.find((n) => n.id === S.side), ($("#sc-in").value || "").trim()); break;
+    case "side-answer": {
+      const n = a.needs.find((x) => x.id === t.dataset.need), c = a.chats[n.id];
+      c.busy = "Writing your answer"; renderRail();
+      setTimeout(() => {
+        c.busy = null; a.ans[n.id] = n.side.pick; a.elseOpen[n.id] = !n.opts.some((o) => o[0] === n.side.pick); a.worked[n.id] = true;
+        S.side = null; renderRail();
+        const el = $(`#need-${n.id}`); if (el) { el.scrollIntoView({ block: "center" }); el.classList.add("flash"); }
+        toast(`${icon("check", "s14")}Added to your reply`);
+      }, 900);
+      break;
+    }
+
+
     case "send": send(a); break;
     case "show-term": {
       const line = $(`#tscroll [data-tstep="${t.dataset.step}"]`); if (!line) break;
@@ -861,10 +952,12 @@ document.addEventListener("click", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
+  if (e.target.id === "sc-in" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("[data-act=side-send]")?.click(); return; }
   const t = e.target.closest?.(".trow.step, .arow"); if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t.click(); }
 });
 document.addEventListener("input", (e) => {
   const a = S.id ? byId(S.id) : null; if (!a) return;
+  if (e.target.id === "sc-in") { const c = a.chats[S.side]; if (c) c.draft = e.target.value; return; }
   if (e.target.id === "replytext") { a.edited = true; a.text = e.target.value; const b = $("#sendbtn"); if (b) b.disabled = !e.target.value.trim(); return; }
   const id = e.target.dataset.else;
   if (id) { const v = e.target.value.trim(); if (v) a.ans[id] = v; else delete a.ans[id]; sync(a); const f = e.target.closest(".need").querySelector(".nfoot .t3"); if (!f && v) e.target.closest(".need").querySelector(".nfoot").insertAdjacentHTML("beforeend", `<span class="t3" style="font-size:13px">In your reply</span>`); }
