@@ -130,6 +130,7 @@ const server = http.createServer(async (req, res) => {
       if (action === "answer") { await live.answerQuestion(id, String(B.text || "")); return json(res, 200, { ok: true }); }
       // An ended session leaves the running list; its transcript stays in the saved sessions.
       if (action === "forget") { live.forget(id); return json(res, 200, { ok: true }); }
+      if (action === "discard") return json(res, 200, { ok: live.discard(id) });
       if (action === "terminal") { live.answerTerminal(id, B.choice); return json(res, 200, { ok: true }); }
       if (action === "interrupt") { live.interrupt(id, B.key === "ctrlc" ? "\x03" : "\x1b"); return json(res, 200, { ok: true }); }
       if (action === "stop") { live.stop(id); return json(res, 200, { ok: true }); }
@@ -214,6 +215,7 @@ wss.on("connection", (ws) => {
 const broadcast = (msg, onlyFor) => { const s = JSON.stringify(msg); for (const ws of wss.clients) if (ws.readyState === 1 && (!onlyFor || ws.subs.has(onlyFor))) ws.send(s); };
 live.bus.on("pty", (id, data) => broadcast({ type: "pty", id, data }, id));
 live.bus.on("session", (summary, what) => broadcast({ type: "session", session: summary, what }));
+live.bus.on("gone", (id) => broadcast({ type: "gone", id }));
 // A long session's timeline is a few hundred kB, so each session's goes out at most every 2.5 s;
 // the latest state always follows.
 const sentAt = new Map(), later = new Map();

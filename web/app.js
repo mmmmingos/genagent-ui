@@ -46,7 +46,7 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1200);
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
-    if (msg.type === "pty" || msg.type === "replay") { const t = terms.get(msg.id); if (t) { if (msg.type === "replay") t.term.reset(); t.term.write(msg.data); } return; }
+    if (msg.type === "pty" || msg.type === "replay") { const t = terms.get(msg.id); if (t) { if (msg.type === "replay" && msg.data) t.term.reset(); t.term.write(msg.data); } return; }
     if (msg.type === "session") {
       const prev = S.live.get(msg.session.id), s = msg.session;
       if (s.status === "working" && (!prev || prev.status !== "working")) S.workingSince.set(s.id, Date.now());
@@ -55,6 +55,7 @@ function connect() {
       if (msg.what === "turn-end" && !isOnScreen(s.id)) notify("Finished its turn", title(s), "ok", () => openLive(s.id), 5000);
       schedule(); return;
     }
+    if (msg.type === "gone") { S.live.delete(msg.id); schedule(); return; }
     if (msg.type === "transcript") { S.liveTail.set(msg.id, { last: msg.last, context: msg.context, count: msg.count, plan: msg.plan, timeline: msg.timeline, userTurns: msg.userTurns }); schedule(); return; }
     if (msg.type === "gen-start") { (msg.midTurn ? S.genMid : S.genBusy).add(msg.file); schedule(); return; }
     if (msg.type === "gen") { mergeGen(msg.file, msg.gen); S.genBusy.delete(msg.file); S.genMid.delete(msg.file); schedule(); return; }
@@ -72,6 +73,8 @@ async function refresh(force) {
   for (const l of st.live) S.live.set(l.id, l);
   // Sessions the server no longer knows (it restarted) are shown as ended, not running.
   for (const [id, l] of S.live) if (!seen.has(id) && l.alive) S.live.set(id, { ...l, alive: false, status: "exited", pendingAsk: null, pendingPermission: null, terminalNeeds: null });
+  // A new session left unused (the window closed on it) is discarded; the one on screen stays.
+  for (const l of st.live) if (l.fresh && !(S.page === "session" && S.sel?.id === l.id) && Date.now() - l.createdAt > 15000) discard(l.id);
   // A session that hasn't changed since the window opened has sent no transcript yet: read it once.
   for (const l of st.live) if (l.file && !S.liveTail.has(l.id) && !S.viewFetch.has(l.id)) {
     S.viewFetch.add(l.id);
@@ -123,6 +126,7 @@ function render() {
   const onSession = S.page === "session";
   $(".main").classList.toggle("agent", onSession && S.sel?.kind === "live");
   $(".main").classList.toggle("withrail", onSession);
+  $(".main").classList.toggle("norail", onSession && S.sel?.kind === "live" && !railWanted(current()));
   renderTerm();
   autosizeAll();
   if (S.page === "session") { syncReply(); drawLines(); }
@@ -205,7 +209,7 @@ function sideHTML() {
   };
   const needsN = by("needs").length;
   return `
-    <button class="srow srow-new" data-act="go" data-page="new">${icon("plus")}New session</button>
+    <button class="srow srow-new" data-act="new-session">${icon("plus")}New session</button>
     <label class="srow srow-search">${icon("search")}<input id="search" data-keep placeholder="Search" aria-label="Search sessions" autocomplete="off"><kbd>Ctrl K</kbd></label>
     <button class="srow ${S.page === "overview" ? "is-on" : ""}" data-act="go" data-page="overview">${icon("flow")}<span class="st">Orchestrator</span>${needsN ? `<span class="sm"><span class="badge">${needsN}</span></span>` : ""}</button>
     ${groupsLive.filter(([, items]) => items.length).map(([name, items]) => `<div class="sgroup">${name}</div>${items.map(liveRow).join("")}`).join("")}
@@ -244,7 +248,12 @@ function markSeen() {
   S.seen[k] = { at: Date.now(), ev: (ref && ref.timeline && ref.timeline.events) || (S.seen[k] || {}).ev || 0 };
   saveSeen();
 }
-function leaveSession() { markSeen(); if (S.look) S.doneNow.delete(S.look.key); S.look = null; S.focusNeed = null; }
+function leaveSession() {
+  markSeen(); if (S.look) S.doneNow.delete(S.look.key); S.look = null; S.focusNeed = null;
+  const l = S.sel && S.sel.kind === "live" && S.live.get(S.sel.id);
+  if (l && l.fresh) discard(l.id);
+}
+function discard(id) { S.live.delete(id); const t = terms.get(id); if (t) { t.term.dispose(); terms.delete(id); } api(`/api/sessions/${id}/discard`, {}).catch(() => {}); }
 
 const modelCache = new WeakMap();
 // The timeline with the AI layer's notes on it. Cached per timeline, notes and look.
@@ -333,7 +342,15 @@ function agentHTML(ref) {
       ${l.alive ? `<span class="stopwrap"><button class="ibtn ${S.stopAsk === l.id ? "is-on" : ""}" data-act="stop-ask" title="Stop this session" aria-label="Stop session">${icon("power")}</button>${S.stopAsk === l.id ? `<span class="stop-pop" role="dialog"><span>Stop this session? You can resume it later.</span><span class="stop-act"><button class="btn btn-text sm" data-act="stop-cancel">Cancel</button><button class="btn btn-danger sm" data-act="stop-session">Stop</button></span></span>` : ""}</span>` : ""}
     </div>
   </header>
-  <aside class="railpane" id="railpane" aria-label="${sd ? "Side chat" : "What it needs and its timeline"}">${sd ? sideChatHTML(sd) : railHTML(ref)}</aside>`;
+  ${railWanted(ref) ? `<aside class="railpane" id="railpane" aria-label="${sd ? "Side chat" : "What it needs and its timeline"}">${sd ? sideChatHTML(sd) : railHTML(ref)}</aside>` : ""}`;
+}
+// The rail appears once there is something to show: a step, something it needs, or a side chat.
+// Until then the terminal has the whole width.
+function railWanted(ref) {
+  if (!ref || ref.kind !== "live") return true;
+  if (curSide() || [...S.sides.keys()].some((k) => k.startsWith(refKey(ref) + "|"))) return true;
+  const m = model(ref);
+  return !!((m && m.flat.length) || needsOf(ref).length || (ref.file && S.genErr.get(ref.file)));
 }
 
 // What the agent is doing right now, from its latest tool call.
@@ -688,7 +705,10 @@ function renderTerm() {
   const l = ref.l;
   $("#termwrap .termframe").classList.toggle("ended", !l.alive);
   morph($("#tend"), l.alive ? "" : `<span>${icon("power", "s14")}${l.stopped ? "Session stopped" : `Session ended${l.exitCode ? ` (exit code ${l.exitCode})` : ""}`}</span><span class="sp"></span>${l.harness === "claude" && l.file ? `<button class="btn btn-tint sm" data-act="resume" ${S.inflight.has("resume") ? "disabled" : ""}>Resume</button>` : ""}<button class="btn btn-neutral sm" data-act="new-here">New session here</button><button class="btn btn-text sm" data-act="session-close" title="Remove it from the running list; it stays in your saved sessions">Close</button>`);
-  morph($("#tstrip"), `${icon("term")}<b>${esc(S.labels[l.harness])}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span><span class="sp"></span>
+  // Until the CLI is up, the frame says so, rather than showing an empty box.
+  const boot = $("#tboot"); boot.hidden = !(l.alive && l.status === "starting");
+  if (!boot.hidden) boot.innerHTML = `<span class="spin"></span>${esc(S.labels[l.harness] || "The agent")} is starting in ${esc(shortPath(l.cwd))}…`;
+  morph($("#tstrip"), `${icon("term")}${l.fresh ? `<button class="tpick" data-act="fresh-harness" title="Switch to another agent">${esc(S.labels[l.harness])}${icon("chevd", "s12")}</button><button class="tpick cwd" data-act="fresh-folder" title="${esc(l.cwd)}">${icon("folder", "s14")}${esc(shortPath(l.cwd))}${icon("chevd", "s12")}</button>` : `<b>${esc(S.labels[l.harness])}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span>`}<span class="sp"></span>
     ${l.alive ? `<button class="btn btn-text" data-act="term-int">Interrupt</button><button class="btn btn-text" data-act="term-clear" title="Clears this window's view of the terminal; the session is untouched">Clear screen</button>` : ""}`);
   let t = terms.get(l.id);
   if (!t) {
@@ -943,7 +963,7 @@ function allNeedsHTML(rows) {
 
 function overviewHTML() {
   const order = { needs: 0, idle: 1, done: 1, run: 2, reading: 2, off: 4 };
-  const rows = [...S.live.values()].map((l) => { const ref = liveRef(l); return { l, ref, st: liveState(l), m: model(ref), needs: needsOf(ref) }; });
+  const rows = [...S.live.values()].filter((l) => !l.fresh).map((l) => { const ref = liveRef(l); return { l, ref, st: liveState(l), m: model(ref), needs: needsOf(ref) }; });
   rows.sort((a, b) => order[a.st] - order[b.st] || b.needs.filter(replyable).length - a.needs.filter(replyable).length || (b.l.lastActivity || 0) - (a.l.lastActivity || 0));
   const running = rows.filter((x) => x.l.alive), ended = rows.filter((x) => !x.l.alive).slice(0, 6);
   const count = (t) => running.filter((x) => TONE[x.st] === t).length;
@@ -969,7 +989,7 @@ function overviewHTML() {
   const body = S.dashTab === "needs" ? allNeedsHTML(rows)
     : running.length ? `<div class="card arows">${running.map(agentRow).join("")}</div>
       <div class="dlegend"><span><span class="dot needs"></span>Needs you</span><span><span class="dot turn"></span>Your turn</span><span><span class="dot working"></span>Working</span><span><span class="lg-look"></span>Where you left off</span><span><span class="k-ring"></span>Your message</span><span><span class="k-x">×</span>Dropped</span></div>`
-    : `<section class="card ovcard"><div class="ovempty"><span>No agents running. Start one from a new session.</span><button class="btn btn-tint" data-act="go" data-page="new">New session</button></div></section>`;
+    : `<section class="card ovcard"><div class="ovempty"><span>No agents running. Start one from a new session.</span><button class="btn btn-tint" data-act="new-session">New session</button></div></section>`;
   return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">Agents started here</div><div class="head-r"><button class="btn btn-neutral sm" data-act="go" data-page="plan" title="Break a bigger goal into steps for several agents">${icon("flow", "s14")}Plan a goal</button></div></header>
   <div class="scroll"><div class="dash">
     <div class="dhead">
@@ -1047,7 +1067,11 @@ document.addEventListener("click", async (e) => {
       case "stop-ask": S.stopAsk = S.stopAsk === ref.id ? null : ref.id; render(); break;
       case "stop-cancel": S.stopAsk = null; render(); break;
       case "stop-session": S.stopAsk = null; render(); await api(`/api/sessions/${ref.id}/stop`, {}); break;
-      case "new-here": S.ng = { ...S.ng, cwd: ref.cwd, harness: ref.harness, plan: null, err: "" }; go("new"); break;
+      case "new-here": await newSession(ref.cwd, ref.harness); break;
+      case "new-session": await newSession(); break;
+      // Before you send anything, a new session can still move to another folder or agent.
+      case "fresh-folder": openPicker(el, ref.cwd); S.picker.fresh = ref.id; break;
+      case "fresh-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); await newSession(ref.cwd, av[(av.indexOf(ref.harness) + 1) % av.length], ref.id); break; }
       case "session-close": { await api(`/api/sessions/${ref.id}/forget`, {}); S.live.delete(ref.id); go("overview"); refresh().catch(() => {}); break; }
       case "interrupt": await api(`/api/sessions/${ref.id}/interrupt`, { key: "esc" }); break;
       case "term-int": await api(`/api/sessions/${ref.id}/interrupt`, { key: "ctrlc" }); break;
@@ -1137,7 +1161,7 @@ document.addEventListener("keydown", (e) => {
   const el = e.target;
   if (el.closest && el.closest(".xterm")) return; // the terminal owns its keys
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("#search")?.focus(); return; }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") { e.preventDefault(); go("new"); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") { e.preventDefault(); newSession().catch((x) => toast(x.message, "", "fail")); return; }
   if (e.key === "Escape") {
     if (S.picker) { closePicker(); return; }
     // Esc closes the side chat only from inside it, and never throws away typing.
@@ -1221,6 +1245,21 @@ async function planIt() {
   try { ng.plan = await api("/api/plan", { goal: ng.goal, cwd: ng.cwd }); } catch (e) { ng.err = e.message; }
   ng.busy = false; render();
 }
+// New session: the real terminal at once, in your most recent project (or the one given). You type
+// your first message straight into it. Left without sending anything, it is discarded.
+async function newSession(cwd, harness, replace) {
+  cwd = cwd || S.ng.cwd || recentFolders()[0]; harness = harness || S.ng.harness || "claude";
+  if (!cwd) { go("new"); return; }
+  S.ng.cwd = cwd; S.ng.harness = harness;
+  const same = [...S.live.values()].find((l) => l.alive && l.fresh && l.id !== replace && l.cwd === cwd && l.harness === harness);
+  if (same) { openLive(same.id); return; }
+  await guarded("new-session", async () => {
+    const s = await api("/api/sessions", { harness, cwd });
+    S.live.set(s.id, s);
+    if (replace && S.sel && S.sel.id === replace) { S.sel = null; S.page = "overview"; S.look = null; discard(replace); }
+    openLive(s.id); askNotify();
+  });
+}
 async function startNow() {
   const ng = S.ng;
   const g = $("#ng-goal"); if (g) ng.goal = g.value;
@@ -1294,7 +1333,10 @@ async function chooseFolder(p, sure) {
     pk?.querySelector(".pk-head")?.insertAdjacentHTML("afterend", `<div class="pk-warn" role="alert">${icon("alert")}<span><b>${esc(name)}</b> holds ${r.dirs.length} folders and isn't a project itself. Pick the project inside it.</span><button class="btn btn-text sm" data-act="pk-use" data-sure="1">Use it anyway</button></div>`);
     return;
   }
-  S.ng.cwd = r.path; closePicker(); render(); $("#ng-goal")?.focus();
+  const fresh = S.picker && S.picker.fresh && S.live.get(S.picker.fresh);
+  closePicker();
+  if (fresh) { await newSession(r.path, fresh.harness, fresh.id); return; }
+  S.ng.cwd = r.path; render(); $("#ng-goal")?.focus();
 }
 
 // ---- Bits ---------------------------------------------------------------------

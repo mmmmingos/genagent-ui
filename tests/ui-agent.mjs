@@ -62,13 +62,34 @@ try {
   await cdp("Page.navigate", { url: `http://127.0.0.1:${PORT}/?c=${code}` });
   check("app loaded", await waitFor(`!!document.querySelector('#side .srow-new')`));
 
-  // 1. A turn that ends on two questions in plain text.
-  const s = await api("/api/sessions", { harness: "claude", cwd: SANDBOX, model: "sonnet", name: "Pricing plans",
-    prompt: "In this folder, write plans.md listing three plans (Starter $19, Pro $49, Business $129) one per line. Then run: node -e \"console.log('plans ok')\". Then end your turn by asking me two separate questions in plain text (do not use the AskUserQuestion tool): 1. Which plan should be highlighted as most popular? 2. What yearly discount should we show: 20% off, or 2 months free? Whenever I reply later, do only what I say, then end your turn with a one-line summary and no questions, unless I ask for one." });
-  await ev(`GENUI.openLive(${JSON.stringify(s.id)})`);
-  check("agent view: the real terminal beside the rail", await waitFor(`!document.getElementById('termwrap').hidden && document.querySelector('.main').classList.contains('agent')`, 10000));
-  // Folder trust in a fresh scratch folder shows as a card in Needs from you.
-  if (await waitFor(`!!document.querySelector('#railpane [data-act=term-yes]')`, 25000)) { await shot("trust"); await clickSel("#railpane [data-act=term-yes]"); }
+  // 0. New session is the real terminal straight away; left unused, it is discarded.
+  await ev(`GENUI.S.ng.cwd = ${JSON.stringify(SANDBOX)}`);
+  await clickSel("#side [data-act=new-session]");
+  check("New session: the terminal shows at once, full width, with no empty rail", await waitFor(`!document.getElementById('termwrap').hidden && document.querySelector('.main').classList.contains('norail') && !document.getElementById('railpane')`, 3000));
+  check("its strip lets you switch folder and agent before you type", await waitFor(`!!document.querySelector('#tstrip [data-act=fresh-folder]') && !!document.querySelector('#tstrip [data-act=fresh-harness]')`, 3000));
+  check("while Claude Code starts, the frame says so", await ev(`!document.getElementById('tboot').hidden && /starting/.test(document.getElementById('tboot').textContent)`));
+  await sleep(300); await shot("new-session");
+  const unused = await S(`r.id`);
+  await clickSel(`#side [data-act=go][data-page=overview]`);
+  check("leaving it without typing discards it", await waitFor(`!GENUI.S.live.has(${JSON.stringify(unused)})`, 5000) && !(await api("/api/state")).live.some((x) => x.id === unused));
+
+  await sleep(3000);
+  check("it doesn't come back as an ended session", await ev(`!GENUI.S.live.has(${JSON.stringify(unused)})`));
+  // 1. A turn that ends on two questions in plain text, typed into the terminal.
+  await clickSel("#side [data-act=new-session]");
+  check("a second New session opens its terminal", await waitFor(`GENUI.S.page === 'session' && !!GENUI.current()?.l?.fresh`, 5000));
+  const s = { id: await S(`r.id`) };
+  // Folder trust in a fresh scratch folder: the terminal asks, and the rail appears with it.
+  if (await waitFor(`!!document.querySelector('#railpane [data-act=term-yes]')`, 20000)) { await shot("trust"); await clickSel("#railpane [data-act=term-yes]"); }
+  check("Claude Code is ready in the terminal", await waitFor(`(()=>{ const l = GENUI.S.live.get(${JSON.stringify(s.id)}); return l && l.status === 'idle'; })()`, 30000));
+  await sleep(1500); await shot("new-session-ready");
+  await ev(`document.querySelector('.xterm-helper-textarea').focus()`);
+  await typeText("In this folder, write plans.md listing three plans (Starter $19, Pro $49, Business $129) one per line. Then run: node -e \"console.log('plans ok')\". Then end your turn by asking me two separate questions in plain text (do not use the AskUserQuestion tool): 1. Which plan should be highlighted as most popular? 2. What yearly discount should we show: 20% off, or 2 months free? Whenever I reply later, do only what I say, then end your turn with a one-line summary and no questions, unless I ask for one.");
+  await sleep(500);
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  check("after you send, it's no longer a discardable new session", await waitFor(`!GENUI.current().l.fresh`, 20000));
+  check("no rail while there's nothing to show yet", await ev(`!document.getElementById('railpane') || !!document.querySelector('#railpane .trow.step, #railpane .need')`));
   // A quick turn can be over before the first look, so either a blue step or the ended turn counts.
   check("the timeline has your message and the step it's on", await waitFor(`!!document.querySelector('#railpane .trow.goal') && !!document.querySelector('#railpane .nd.run, #railpane .nd.turn, #railpane .nd.needs')`, 90000));
   await sleep(1500); await shot("working");

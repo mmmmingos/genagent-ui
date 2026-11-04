@@ -423,6 +423,10 @@ pre.diff .add { color: var(--green-ink); display: block; }
 @media (max-width: 1100px) { :root { --rail-w: 360px; } }
 .main.agent .termwrap { right: var(--rail-w); padding: 0 12px 16px 24px; }
 .main.agent .termframe { max-width: none; }
+.main.agent.norail .termwrap { right: 0; padding-right: 24px; }
+.tpick { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: var(--r-row); color: inherit; font-weight: 500; white-space: nowrap; min-width: 0; }
+.tpick:hover { background: rgba(255,255,255,.08); }
+.tpick.cwd { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
 .termframe.flash { animation: tflash 1s var(--ease-out); }
 @keyframes tflash { 0%, 30% { box-shadow: 0 0 0 3px var(--amber-ring); } 100% { box-shadow: var(--shadow-card); } }
 .railpane { position: absolute; top: var(--header-h); right: 0; bottom: 0; width: var(--rail-w); padding: 0 16px 16px 4px; display: flex; flex-direction: column; animation: fadein var(--t-fast) var(--ease-out) both; }
@@ -524,6 +528,9 @@ button.pl-now.needs > .ic:last-child { margin-left: auto; width: 12px; height: 1
 /* An ended session: the terminal dims and a bar says what you can do. */
 .termframe.ended .thost { opacity: .5; filter: grayscale(.4); }
 .tend:empty { display: none; }
+.termframe { position: relative; }
+.tboot { position: absolute; left: 32px; top: 64px; display: flex; align-items: center; gap: 10px; font: var(--fs-mono)/20px var(--font-mono); color: #8a8a8a; pointer-events: none; }
+.tboot .spin { border-color: #333; border-top-color: #a3a3a3; }
 .tend { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; background: #1b1b1b; border-top: 1px solid #262626; color: #e8e8e8; font-size: var(--fs-meta); }
 .tend > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
 .tend .sp { flex: 1; }

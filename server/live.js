@@ -54,6 +54,8 @@ export function summary(s) {
     pendingAsk: s.ask ? { id: s.ask.id, questions: s.ask.questions } : null,
     pendingPermission: s.perm ? { id: s.perm.id, tool: s.perm.tool, input: s.perm.input } : null,
     terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity, stopped: !!s.stopped,
+    // Opened from New session and not sent anything yet: leaving it discards it.
+    fresh: s.alive && !s.used,
   };
 }
 
@@ -86,7 +88,7 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
   const s = {
     id, harness, cwd, name: name || "", model, origin, goalHint: goalHint || prompt || "", pty: p, alive: true, exitCode: null,
     status: prompt ? "working" : "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
-    file: null, ask: null, perm: null, native: null, terminalNeeds: null, hooked: false, resumeOf: resume || null,
+    file: null, ask: null, perm: null, native: null, terminalNeeds: null, hooked: false, resumeOf: resume || null, used: !!(prompt || resume),
     vt: new xtermHeadless.Terminal({ cols: 120, rows: 36, allowProposedApi: true, scrollback: 200 }),
   };
   sessions.set(id, s);
@@ -100,6 +102,7 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
     sniffScreen(s);
   });
   p.onExit(({ exitCode }) => {
+    if (sessions.get(id) !== s) return; // discarded: it never happened
     s.alive = false; s.exitCode = exitCode; s.status = "exited";
     s.ask = null; s.perm = null; s.native = null; s.terminalNeeds = null;
     clearInterval(s.watcher); clearTimeout(s.quietTimer); clearTimeout(s.intTimer);
@@ -257,6 +260,7 @@ function watch(s) {
         lastSize = st.size;
         const parsed = readSession(s.harness, s.file);
         s.context = parsed.context;
+        if (!s.used && parsed.events.some((e) => e.role === "user")) { s.used = true; changed(s); }
         bus.emit("transcript", s.id, parsed);
         // Codex writes explicit turn markers; Grok has none, so a long silence ends its turn.
         if (s.harness === "codex" && s.alive && parsed.turn) {
@@ -295,6 +299,7 @@ export function send(id, text) {
   if (!s?.alive) throw new Error("This session isn't running");
   const body = String(text).replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
   if (!body.trim()) throw new Error("Nothing to send");
+  s.used = true;
   s.pty.write(`\x1b[200~${body}\x1b[201~`);
   setTimeout(() => s.pty.write("\r"), 120);
   s.status = "working"; s.terminalNeeds = null; changed(s);
@@ -336,7 +341,7 @@ export function onHook(id, ev) {
   s.hooked = true;
   if (ev.transcript_path && !s.file && fs.existsSync(path.dirname(ev.transcript_path))) { s.file = ev.transcript_path; persist(); watch(s); }
   if (name === "SessionStart") { if (s.status === "starting") s.status = "idle"; s.terminalNeeds = null; }
-  if (name === "UserPromptSubmit") { s.status = "working"; s.terminalNeeds = null; s.ask = null; s.perm = null; }
+  if (name === "UserPromptSubmit") { s.used = true; s.status = "working"; s.terminalNeeds = null; s.ask = null; s.perm = null; }
   if (name === "Stop") {
     s.stoppedAt = Date.now(); s.terminalNeeds = null;
     if (s.native && s.nativeGoneAt) closeNative(s); // already leaving the screen
@@ -367,6 +372,19 @@ export async function answerQuestion(id, text) {
     await new Promise((r) => setTimeout(r, 300));
   }
   send(id, text);
+}
+
+// A session opened from New session that you left without sending anything: it never happened.
+export function discard(id) {
+  const s = sessions.get(id);
+  if (!s || s.used) return false;
+  s.stopped = true;
+  try { s.pty.kill(); } catch {}
+  clearInterval(s.watcher);
+  sessions.delete(id);
+  try { fs.writeFileSync(REG, JSON.stringify(loadRegistry().filter((r) => r.id !== id), null, 2)); } catch {}
+  bus.emit("gone", id);
+  return true;
 }
 
 export function forget(id) {

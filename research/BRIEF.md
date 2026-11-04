@@ -12,7 +12,7 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
 ## Fixed decisions
 - **A wrapper, not a new product.** The real, unmodified CLIs (Claude Code, Codex, Grok) run inside GenUI's window, so their updates need no work from us. GenUI watches through hooks and transcripts. It puts text in by typing it as the owner's next message. The only key it ever presses in the CLIs' menus is a single Esc, to close a question the owner has answered on the side. (Claude Code "channels" are deferred.)
 - **Look and feel:** the @pitus_ generative-UI style in `DESIGN.md`. The terminal is always dark.
-- **Agent view:** the real terminal on the left, a rail on the right.
+- **Agent view:** the real terminal on the left, a rail on the right. The rail shows only once there's a step or something that needs the owner; until then the terminal is full width (owner, 2026-11-04: nothing in it until there's something to show).
 - **Flowchart = a timeline** (owner chose it on prototype v2 over the branches tree, which read as parallel work that never happened):
   - One line, top to bottom, in the order things happened. Each message the owner sent starts a section, headed by his own words and the time: "You started", "You asked" or "You changed direction". The agent's steps sit under it as dots.
   - Only work set aside when he changed direction steps off the line, with a × and the reason.
@@ -25,7 +25,7 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
   - **New session** for anything unrelated: the **+** in the header uses the same folder.
   - Not Claude Code's /btw: it's one-shot. Side agents are forks with read-only tools, and their discussions stay listed under the flowchart.
 - **Sessions:**
-  - **New session:** type and press Enter; it starts in the most recent project.
+  - **New session:** the real terminal opens at once in the most recent project; you type into it. Left unused, it's discarded. (Owner, 2026-11-04: it should look like the terminal from the start, not a box that turns into one.)
   - **Stop:** one click, then a confirm. A stopped session offers Resume, New session here, and Close.
   - **Planning:** "Plan a goal" is on the Orchestrator page, to be redesigned with phase 2.
 - **Testing:** test sessions run only in `sandbox/`. Real sessions are read-only. Never auto-trust a folder outside `sandbox/`. Clean up test sessions afterwards. Local git only.
