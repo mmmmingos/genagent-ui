@@ -69,7 +69,7 @@ test("small formatters", () => {
 });
 
 // ---- Growing flow and the agent's own task list ----
-import { mergeSteps, MAX_STEPS } from "../server/genui.js";
+import { emptyTree, applyOps, stepsFromTree, currentLeaf, currentGoal, treeText } from "../server/flowtree.js";
 
 test("Codex update_plan becomes the flow", () => {
   const p = parseCodex([
@@ -88,26 +88,53 @@ test("Claude TodoWrite becomes the flow, latest list wins", () => {
   assert.equal(p.plan.length, 3);
 });
 
-test("finished steps never move or disappear; new steps append", () => {
-  const prev = [{ label: "Read the brief", state: "done" }, { label: "Write the hero", state: "done" }, { label: "Get the price", state: "current" }];
-  // The model reworded and dropped finished steps and added new work.
-  const next = [{ label: "Read brief", state: "done" }, { label: "Get the price", state: "done" }, { label: "Write the FAQ", state: "current" }, { label: "Open a PR", state: "next" }];
-  const m = mergeSteps(prev, next);
-  assert.deepEqual(m.slice(0, 2).map((s) => s.label), ["Read the brief", "Write the hero"]);
-  assert.ok(m.some((s) => s.label === "Write the FAQ" && s.state === "current"));
-  assert.ok(m.length >= 4);
-  // capped
-  const many = Array.from({ length: 50 }, (_, i) => ({ label: "Step " + i, state: i < 49 ? "done" : "current" }));
-  assert.equal(mergeSteps(many, []).length, MAX_STEPS);
+test("flowchart: built with refs, one current step, goals on its path are current", () => {
+  const t = applyOps(emptyTree(), [
+    { op: "add", ref: "g", kind: "goal", label: "Audit the signup fork", state: "current" },
+    { op: "add", parent: "g", kind: "step", label: "Read fork code", state: "done" },
+    { op: "add", parent: "g", kind: "step", label: "Check routing", state: "current" },
+    { op: "add", parent: "g", kind: "step", label: "Visual pass", state: "next" },
+  ]);
+  assert.equal(currentLeaf(t).label, "Check routing");
+  assert.equal(currentGoal(t).label, "Audit the signup fork");
+  assert.deepEqual(stepsFromTree(t).map((s) => s.state), ["done", "current", "next"]);
 });
 
-test("a reworded finished step is not duplicated", () => {
-  const prev = [{ label: "Step 1: create step-1.txt", state: "done" }, { label: "Step 2: create step-2.txt", state: "current" }];
-  const next = [{ label: "Step 1: create step-1.txt (contains \"1\")", state: "done" }, { label: "Step 2: create step-2.txt", state: "done" }, { label: "Step 3: create step-3.txt", state: "current" }];
-  const m = mergeSteps(prev, next);
-  assert.equal(m.filter((s) => /step-1/.test(s.label)).length, 1);
-  assert.equal(m[0].label, "Step 1: create step-1.txt");
-  assert.ok(m.some((s) => /step-3/.test(s.label)));
+test("flowchart: done and dropped nodes are never rewritten; a pivot is a new branch", () => {
+  let t = applyOps(emptyTree(), [
+    { op: "add", ref: "g", kind: "goal", label: "Audit the signup fork", state: "current" },
+    { op: "add", parent: "g", label: "Read fork code", state: "done" },
+    { op: "add", parent: "g", label: "Visual pass", state: "current" },
+  ]);
+  const read = t.nodes.find((n) => n.label === "Read fork code"), visual = t.nodes.find((n) => n.label === "Visual pass");
+  // The user changes course: the visual pass is dropped and a new goal branches off.
+  t = applyOps(t, [
+    { op: "rename", id: read.id, label: "Skimmed the code" },       // done: refused
+    { op: "state", id: read.id, state: "next" },                    // done: refused
+    { op: "state", id: visual.id, state: "dropped" },
+    { op: "add", ref: "g2", parent: t.nodes[0].id, kind: "goal", label: "Fix Trustpilot link", state: "current" },
+    { op: "add", parent: "g2", label: "Find the link source", state: "current" },
+  ]);
+  assert.equal(t.nodes.find((n) => n.id === read.id).label, "Read fork code");
+  assert.equal(t.nodes.find((n) => n.id === read.id).state, "done");
+  assert.equal(t.nodes.find((n) => n.id === visual.id).state, "dropped");
+  t = applyOps(t, [{ op: "state", id: visual.id, state: "current" }]); // dropped: refused
+  assert.equal(t.nodes.find((n) => n.id === visual.id).state, "dropped");
+  assert.equal(currentGoal(t).label, "Fix Trustpilot link");
+  assert.equal(t.nodes.filter((n) => n.state === "current" && n.kind === "step").length, 1);
+  assert.match(treeText(t), /- n1 \[goal, current\] Audit the signup fork\n  - n2 \[step, done\] Read fork code/);
+});
+
+test("flowchart: moving on closes the old current step; renames only before a step starts", () => {
+  let t = applyOps(emptyTree(), [
+    { op: "add", ref: "g", kind: "goal", label: "Build the page", state: "current" },
+    { op: "add", parent: "g", label: "Write the hero", state: "current" },
+    { op: "add", parent: "g", label: "Pricing bit", state: "next" },
+  ]);
+  const pricing = t.nodes.find((n) => n.label === "Pricing bit");
+  t = applyOps(t, [{ op: "rename", id: pricing.id, label: "Write the pricing section" }, { op: "state", id: pricing.id, state: "current" }]);
+  assert.equal(t.nodes.find((n) => n.label === "Write the hero").state, "done");
+  assert.equal(currentLeaf(t).label, "Write the pricing section");
 });
 
 test("Codex: a failed turn surfaces its error, and a new turn clears it", () => {
@@ -135,4 +162,16 @@ test("Claude Code's own menus are recognised from the screen", async () => {
   assert.deepEqual(nativeMenu(perm), { kind: "permission" });
   assert.deepEqual(nativeMenu(review), { kind: "ask" });
   assert.equal(nativeMenu(idle), null);
+});
+
+test("flowchart: a goal whose branches are all finished is done; later goals branch off the trunk", () => {
+  const t = applyOps(emptyTree(), [
+    { op: "add", ref: "g", kind: "goal", label: "Rebrand the navbar", state: "done" },
+    { op: "add", parent: "g", label: "Link navbar", state: "done" },
+    { op: "add", ref: "g2", kind: "goal", label: "Port the latest dev", state: "done" },
+    { op: "add", parent: "g2", label: "Update the icon", state: "done" },
+  ]);
+  const [trunk, , branch] = t.nodes;
+  assert.equal(branch.parent, trunk.id);
+  assert.equal(trunk.state, "done");
 });

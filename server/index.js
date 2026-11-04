@@ -60,9 +60,12 @@ function saved(force) {
   return savedCache.items;
 }
 const findFile = (harness, file) => {
-  // Only transcripts the app listed (or started) may be opened.
-  const ok = saved().some((s) => s.file === file) || live.list().some((s) => s.file === file) || live.loadRegistry().some((s) => s.file === file);
-  return ok && fs.existsSync(file) ? file : null;
+  // Only transcripts the app listed (or started) may be opened. Windows paths ignore case, and the
+  // same project folder can be spelled "C--Users…" by one tool and "c--Users…" by another.
+  if (!file) return null;
+  const k = path.resolve(String(file)).toLowerCase(), same = (f) => !!f && path.resolve(f).toLowerCase() === k;
+  const hit = saved().find((s) => same(s.file)) || live.list().find((s) => same(s.file)) || live.loadRegistry().find((s) => same(s.file));
+  return hit && fs.existsSync(hit.file) ? hit.file : null;
 };
 
 const server = http.createServer(async (req, res) => {

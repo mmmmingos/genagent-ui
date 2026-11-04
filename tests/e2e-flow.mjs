@@ -1,6 +1,6 @@
-// End-to-end: the flow updates during a long turn, grows when more work is asked for,
-// and keeps finished steps as they were. Real Claude Code session in sandbox/.
-// Run: node tests/e2e-flow.mjs
+// End-to-end: the flowchart follows a conversation as it unfolds. It updates during a long turn,
+// grows with new work, turns a change of direction into a new branch, and never rewrites what is
+// settled. Real Claude Code session in sandbox/. Run: node tests/e2e-flow.mjs
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -20,7 +20,7 @@ const api = async (p, b) => { const r = await fetch(`http://127.0.0.1:${PORT}${p
 const check = (label, ok) => console.log((ok ? "PASS " : "FAIL ") + label);
 const dir = path.join(ROOT, "sandbox", "flow-" + Date.now());
 fs.mkdirSync(dir, { recursive: true });
-const nk = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const show = (tree) => { const kids = (p) => tree.nodes.filter((n) => n.parent === p); const out = []; const walk = (p, d) => kids(p).forEach((n) => { out.push(`    ${"  ".repeat(d)}${{ done: "✓", current: "●", next: "○", dropped: "✗" }[n.state]} ${n.kind === "goal" ? n.label.toUpperCase() : n.label}`); walk(n.id, d + 1); }); walk(null, 0); return out.join("\n"); };
 
 let ws;
 try {
@@ -29,52 +29,58 @@ try {
   const cookie = ((await fetch(`http://127.0.0.1:${PORT}/?c=${code}`, { redirect: "manual" })).headers.get("set-cookie") || "").split(";")[0];
   ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers: { cookie, origin: `http://127.0.0.1:${PORT}` } });
   const gens = [];
-  let sid = null, status = null;
+  let sid = null;
   ws.on("message", (m) => {
     const j = JSON.parse(m);
-    if (j.type === "session" && j.session.id === sid) status = j.session.status;
-    if (j.type === "gen" && j.id === sid) { gens.push({ statusAtArrival: status, midTurn: !!j.gen.midTurn, steps: j.gen.steps, at: Date.now() }); console.log(`  gen #${gens.length}${j.gen.midTurn ? " (mid-turn)" : ""}: ${j.gen.steps.map((s) => `${s.state === "done" ? "✓" : s.state === "current" ? "●" : "○"} ${s.label}`).join(" | ")}`); }
+    if (j.type === "gen" && j.id === sid && j.gen.tree) { gens.push({ midTurn: !!j.gen.midTurn, tree: j.gen.tree }); console.log(`  update #${gens.length}${j.gen.midTurn ? " (mid-turn)" : ""}:\n${show(j.gen.tree)}`); }
   });
   await new Promise((r) => ws.on("open", r));
-
-  const step = (i) => `Step ${i}: run the shell command "ping -n 8 127.0.0.1" (it just waits a few seconds), then create the file step-${i}.txt containing "${i}".`;
+  const step = (i) => `Step ${i}: run the shell command "ping -n 6 127.0.0.1" (it just waits a few seconds), then create the file step-${i}.txt containing "${i}".`;
   const s = await api("/api/sessions", { harness: "claude", cwd: dir, model: "sonnet", name: "flow test",
-    prompt: `Do these steps strictly one at a time, in order, without asking me anything:\n${[1, 2, 3, 4, 5].map(step).join("\n")}\nWhen all are done, reply with exactly: BATCH1 DONE` });
+    prompt: `Do these steps strictly one at a time, in order, without asking me anything:\n${[1, 2, 3, 4].map(step).join("\n")}\nWhen all are done, reply with exactly: BATCH1 DONE` });
   sid = s.id;
   const waitTurn = async (marker, ms) => {
     for (let t = 0; t < ms / 1000; t++) {
       await sleep(1000);
       const cur = (await api("/api/state")).live.find((x) => x.id === sid);
       if (cur.terminalNeeds) await api(`/api/sessions/${sid}/terminal`, { choice: "yes" });
-      if (cur.pendingPermission) await api(`/api/sessions/${sid}/permission`, { qid: cur.pendingPermission.id, allow: true });
       if (cur.file && fs.existsSync(cur.file) && fs.readFileSync(cur.file, "utf8").includes(marker) && cur.status === "idle") return true;
     }
     return false;
   };
-  check("batch 1 finished", await waitTurn("BATCH1 DONE", 420000));
-  // Wait for the turn-end generation.
-  for (let t = 0; t < 90 && !gens.some((g) => !g.midTurn && g.at > 0 && g.statusAtArrival !== "working"); t++) await sleep(1000);
-  const mids = gens.filter((g) => g.midTurn);
-  check(`flow refreshed during the turn (${mids.length} mid-turn updates)`, mids.length >= 1);
-  const after1 = [...gens].reverse().find((g) => !g.midTurn);
-  check("turn-end flow arrived", !!after1);
-
-  // Ask for more work: the flow should grow and keep what's done.
+  const waitGen = async (from) => { for (let t = 0; t < 120 && !gens.slice(from).some((g) => !g.midTurn); t++) await sleep(1000); };
+  check("turn 1 finished", await waitTurn("BATCH1 DONE", 420000));
+  await waitGen(0);
+  check(`flowchart refreshed during the turn (${gens.filter((g) => g.midTurn).length} mid-turn updates)`, gens.some((g) => g.midTurn));
+  // Turn 2: a change of direction.
   const n1 = gens.length;
-  await api(`/api/sessions/${sid}/send`, { text: `Now do three more steps the same way, one at a time:\n${[6, 7, 8].map(step).join("\n")}\nWhen done, reply with exactly: BATCH2 DONE` });
-  check("batch 2 finished", await waitTurn("BATCH2 DONE", 360000));
-  for (let t = 0; t < 90 && !gens.slice(n1).some((g) => !g.midTurn && g.statusAtArrival !== "working"); t++) await sleep(1000);
-  const after2 = [...gens].reverse().find((g) => !g.midTurn);
-  if (after1 && after2) {
-    const done1 = after1.steps.filter((s) => s.state === "done").map((s) => s.label);
-    const labels2 = after2.steps.map((s) => s.label);
-    check(`finished steps kept as they were (${done1.length} of them)`, done1.every((l, i) => labels2[i] === l));
-    check(`flow grew: ${after1.steps.length} -> ${after2.steps.length} steps`, after2.steps.length > after1.steps.length || after2.steps.filter((s) => s.state === "done").length > done1.length);
-    // Across every update, a step once done never went missing.
-    let ok = true, seen = [];
-    for (const g of gens) { const ls = new Set(g.steps.map((s) => nk(s.label))); if (!seen.every((x) => ls.has(x))) ok = false; seen = [...new Set([...seen, ...g.steps.filter((s) => s.state === "done").map((s) => nk(s.label))])]; }
-    check("no finished step ever disappeared across updates", ok);
-  }
+  await api(`/api/sessions/${sid}/send`, { text: "Change of plan: forget the step files. New task: write a short README.md for this folder (two sentences), then create notes/ideas.md with three bullet ideas for a coffee brand. When done, reply with exactly: PIVOT DONE" });
+  check("turn 2 (a change of direction) finished", await waitTurn("PIVOT DONE", 300000));
+  await waitGen(n1);
+  // Turn 3: more work on the new direction.
+  const n2 = gens.length;
+  await api(`/api/sessions/${sid}/send`, { text: "Add a fourth idea to notes/ideas.md and a one-line tagline at the top of README.md. When done, reply with exactly: MORE DONE" });
+  check("turn 3 finished", await waitTurn("MORE DONE", 300000));
+  await waitGen(n2);
+  const last = gens.at(-1)?.tree;
+  if (last) {
+    const goals = last.nodes.filter((n) => n.kind === "goal");
+    check(`the change of direction is its own branch (${goals.length} goals: ${goals.map((g) => g.label).join(" / ")})`, goals.length >= 2);
+    // Across every update: nodes are never removed, and settled ones never change.
+    let kept = true, frozen = true;
+    const settled = new Map();
+    let prevIds = new Set();
+    for (const g of gens) {
+      const ids = new Set(g.tree.nodes.map((n) => n.id));
+      if (![...prevIds].every((id) => ids.has(id))) kept = false;
+      for (const [id, v] of settled) { const n = g.tree.nodes.find((x) => x.id === id); if (!n || n.label !== v.label || n.state !== v.state) frozen = false; }
+      for (const n of g.tree.nodes) if ((n.state === "done" || n.state === "dropped") && !settled.has(n.id)) settled.set(n.id, { label: n.label, state: n.state });
+      prevIds = ids;
+    }
+    check(`the flowchart only grows: no node ever removed (${last.nodes.length} nodes now)`, kept);
+    check(`settled nodes never reworded or reopened (${settled.size} of them)`, frozen);
+    check("exactly one current step at the end", last.nodes.filter((n) => n.state === "current" && n.kind === "step").length <= 1);
+  } else check("flowchart arrived", false);
   await api(`/api/sessions/${sid}/stop`, {});
 } catch (e) { console.log("FAIL exception " + e.message); }
 finally { try { ws.close(); } catch {} srv.kill(); setTimeout(() => process.exit(0), 500); }

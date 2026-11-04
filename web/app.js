@@ -124,13 +124,12 @@ function render() {
   if (S.page === "overview") morph(view, overviewHTML());
   else if (S.page === "new") morph(view, newGoalHTML());
   else { const ref = current(); if (!ref) { S.page = "overview"; return render(); } morph(view, sessionHTML(ref)); }
-  // A running session is its terminal with the plan rail beside it; the side chat lives in that rail.
-  const agent = S.page === "session" && S.sel?.kind === "live";
-  $(".main").classList.toggle("agent", agent);
+  // A session is shown with its rail on the right (the flowchart, or the side chat): beside its
+  // terminal when it runs here, beside the conversation when it's a saved one.
+  const onSession = S.page === "session";
+  $(".main").classList.toggle("agent", onSession && S.sel?.kind === "live");
+  $(".main").classList.toggle("withrail", onSession);
   renderTerm();
-  const sd = agent ? null : curSide();
-  morph($("#panel"), sd ? sideChatHTML(sd) : "");
-  $("#panel").hidden = !sd;
   autosizeAll();
   const sc = $("#scroll");
   if (sc && (S.forceBottom || nearBottom)) sc.scrollTop = sc.scrollHeight;
@@ -276,6 +275,14 @@ function railHTML(ref, g, ps) {
     : `<div class="pl-now ${tone}">${tone === "run" ? `<span class="spin"></span><span class="shimmer">${esc(activity(ref) || (st === "reading" ? "Reading the reply" : "Working"))}</span>` : esc(!l.alive ? "Session ended" : tone === "done" ? "Done. Your turn" : "Your turn. Type in the terminal")}</div>`;
   const attn = need && open ? `<div class="attn" id="attn-${esc(ref.id)}" data-anim>${attnHTML(ref, g)}</div>` : "";
   const sub = (steps) => steps.length ? `<ol class="pl-sub">${steps.map((s, i) => `<li class="pl-s ${s.state}${s.state === "current" ? " " + tone : ""}" id="pls-${hid(i + s.label)}"><span class="pl-sd"></span><span>${esc(s.label)}</span></li>`).join("")}</ol>` : "";
+  // The flowchart read from the conversation, when there is one; the agent's own task list sits under its current step.
+  const tree = g && g.tree && g.tree.nodes.length ? g.tree : null;
+  const live = nowLine + attn + (ref.plan && ref.plan.length ? sub(own) : "");
+  if (tree && !ps) {
+    const nodes = tree.nodes.length;
+    const head = `<div class="pl-eyebrow">${icon("flow", "s14")}Flowchart<span class="pl-count">${plural(nodes, "node")}</span></div><h3 class="pl-title">${esc(g.title || title(l))}</h3>${g.goal ? `<p class="pl-goal">${esc(g.goal)}</p>` : ""}`;
+    return railShell(ref, `${head}<div class="tree">${treeHTML(tree, hid(ref.file || ref.id), tone, `<div class="t-live">${live}</div>`)}</div>`);
+  }
   const row = (label, state, who, extra, k) => `<li class="pl-row ${state}${state === "current" ? " " + tone : ""}" id="plr-${hid(k + label)}"><span class="pl-dot"></span><div class="pl-body"><div class="pl-label"><span>${esc(label)}</span>${who ? `<span class="pl-who">${esc(who)}</span>` : ""}</div>${extra || ""}</div></li>`;
   let head, rows;
   if (ps) {
@@ -284,7 +291,7 @@ function railHTML(ref, g, ps) {
     rows = p.steps.map((s, i) => {
       const state = i === ps.i ? "current" : done[i] ? "done" : started[i] ? (S.live.get(started[i])?.alive ? "other" : "done") : "next";
       const who = s.harness === "you" ? "You" : engShort(s.harness);
-      return row(s.label, state, who, i === ps.i ? nowLine + attn + sub(own) : "", i);
+      return row(s.label, state, who, i === ps.i ? (tree ? `<div class="tree in-plan">${treeHTML(tree, hid(ref.file || ref.id), tone, `<div class="t-live">${live}</div>`)}</div>` : nowLine + attn + sub(own)) : "", i);
     }).join("");
   } else {
     const cur = own.findIndex((s) => s.state === "current");
@@ -293,10 +300,37 @@ function railHTML(ref, g, ps) {
     rows = own.map((s, i) => row(s.label, s.state, "", s.state === "current" ? nowLine + attn : "", i)).join("");
     if (cur < 0) rows += row(own.length ? "Now" : clip(l.goalHint || "Starting", 60), "current", "", nowLine + attn, "now");
   }
-  const ctx = ref.context;
-  return `<div class="pl-scroll">${head}<ol class="pl">${rows}</ol></div>
+  return railShell(ref, `${head}<ol class="pl">${rows}</ol>`);
+}
+// The rail's frame: scrolling content, then the context meter (and Resume once it has ended).
+function railShell(ref, inner) {
+  const l = ref.l, ctx = ref.context;
+  return `<div class="pl-scroll">${inner}</div>
     <div class="pl-foot">${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
       ${!l.alive && ref.harness === "claude" ? `<span class="sp"></span><button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
+}
+
+// The conversation's flowchart as a branching tree. Settled branches fold to one line (click to
+// open them); the current step carries the live line and, when needed, what the agent needs.
+function treeHTML(tree, key, tone, atCurrent) {
+  const kids = (id) => tree.nodes.filter((n) => n.parent === id);
+  const final = (n) => n.state === "done" || n.state === "dropped";
+  const settled = (n) => final(n) && kids(n.id).every(settled);
+  const count = (n) => kids(n.id).reduce((k, c) => k + 1 + count(c), 0);
+  const leaf = tree.nodes.find((n) => n.state === "current" && !kids(n.id).some((c) => c.state === "current"));
+  const mark = (n) => n.state === "done" ? `<span class="tm done">${icon("check")}</span>` : n.state === "dropped" ? `<span class="tm dropped">${icon("x")}</span>`
+    : n.state === "current" ? `<span class="tm current ${n === leaf ? tone : ""}"></span>` : `<span class="tm next"></span>`;
+  const node = (n) => {
+    const ch = kids(n.id), k = `tree:${key}:${n.id}`;
+    // The trunk stays open so the shape shows; finished branches fold. A click flips either.
+    const folded = ch.length && settled(n) && (n.parent ? !S.open.has(k) : S.open.has(k));
+    const label = `<span class="tl">${esc(n.label)}</span>${n.note ? `<span class="tnote">${esc(n.note)}</span>` : ""}`;
+    const head = ch.length && settled(n)
+      ? `<button class="th" data-act="tree-fold" data-k="${esc(k)}" aria-expanded="${!folded}">${mark(n)}${label}<span class="tcount">${plural(count(n), "step")}</span>${icon(folded ? "chev" : "chevd", "s12")}</button>`
+      : `<div class="th">${mark(n)}${label}</div>`;
+    return `<li class="tn ${n.kind} ${n.state}${n === leaf ? " leaf " + tone : ""}" id="tn-${esc(key)}-${esc(n.id)}" data-decode>${head}${n === leaf ? atCurrent : ""}${ch.length && !folded ? `<ul class="tr">${ch.map(node).join("")}</ul>` : ""}</li>`;
+  };
+  return `<ul class="tr root">${kids(null).map(node).join("")}</ul>${leaf ? "" : atCurrent}`;
 }
 
 // What the agent needs, opened from its step: its question (answered in the terminal, or worked
@@ -343,15 +377,14 @@ function sessionHTML(ref) {
     <div class="head-t" title="${esc(g ? g.goal : "")}">${hdot ? `<span class="hdot" style="background:${hdot}"></span>` : ""}<span>${esc(name)}</span></div>
     <div class="head-meta">${metaParts.filter(Boolean).join(" · ")}</div>
     <div class="head-r">
-      ${ref.kind === "live" ? `<div class="seg" role="group" aria-label="View"><button aria-pressed="${S.tab === "flow"}" data-act="tab" data-tab="flow">Flow</button><button aria-pressed="${S.tab === "terminal"}" data-act="tab" data-tab="terminal">Terminal</button></div>` : ""}
       <button class="ibtn ${S.sideOpen && hasSide ? "is-on" : ""} ${hasSide ? "has-badge" : ""}" data-act="side-toggle" title="Side chat: talk it through without touching the session" aria-label="Side chat">${icon("chat")}</button>
-      ${ref.kind === "live" && ref.alive ? `<button class="ibtn ${S.armed?.act?.startsWith("stop-session:") ? "armed" : ""}" data-act="stop-session" title="${S.armed?.act?.startsWith("stop-session:") ? "Click again to stop this session" : "Stop this session"}" aria-label="Stop session">${icon("power")}</button>` : ""}
     </div>
   </header>
-  <div class="scroll" id="scroll" ${S.tab === "terminal" && ref.kind === "live" ? "hidden" : ""}><div class="stack">
-    <div class="thread">${goalCard(ref, g)}${feed(ref)}${blockingCards(ref)}${genCards(ref, g)}${answerBar(ref, g)}</div>
-    <div class="dock">${chips(ref, g)}${composer(ref, g)}</div>
-  </div></div>`;
+  <div class="scroll" id="scroll"><div class="stack">
+    <div class="thread">${feed(ref)}${blockingCards(ref)}${genCards(ref, g)}</div>
+    <div class="dock">${composer(ref)}</div>
+  </div></div>
+  <aside class="railpane" id="railpane" aria-label="${curSide() ? "Side chat" : "Flowchart"}">${curSide() ? sideChatHTML(curSide()) : `<div class="pl-scroll">${goalCard(ref, g)}</div>`}</aside>`;
 }
 
 // Goal card with the vertical flow rail (3.3). The footer follows the live state, not stale text.
@@ -396,10 +429,10 @@ function goalCard(ref, g) {
       <span class="stat ${STAT_CLS[status] || "idle"}"><i></i>${esc(statLabel)}</span>
       <button class="ibtn sm" data-act="regen" title="${busy || S.genMid.has(ref.file) ? "Reading the session again" : `${ref.plan ? "Steps from the agent's own task list. Goal" : "Goal and flow"} written by GenUI Agent from the transcript, ${esc(ago(g.at))}. Click to read it again.`}" aria-label="Regenerate">${busy || S.genMid.has(ref.file) ? `<span class="spin"></span>` : icon("refresh", "s14")}</button></div>
     <p class="goal-sub" title="${esc(g.goal)}">${esc(g.goal)}</p>
-    <ol class="rail">
+    ${g.tree && g.tree.nodes.length ? `<div class="tree">${treeHTML(g.tree, hid(ref.file), cur, "")}</div>` : `<ol class="rail">
       ${hiddenCount ? `<li class="rrow done"><span class="rn"></span><button class="rl collapsed-rows" data-act="rail-expand">${plural(hiddenCount, "earlier step")} ${icon("chevd", "s12")}</button><span class="rm"></span></li>` : ""}
       ${rows.map(rowHTML).join("")}
-    </ol>
+    </ol>`}
     <div class="gfoot"><span class="now">${stale || ref.state === "reading" ? `<span class="spin"></span>` : nowIcon}<span class="${cur === "run" || stale ? "shimmer" : ""}">${esc(nowText)}</span></span></div>
   </section>`;
 }
@@ -768,6 +801,7 @@ document.addEventListener("click", async (e) => {
       case "term-open": focusTerm(ref); break;
       // What the agent needs opens under its step in the plan.
       case "attn": { const k = "attn:" + ref.id; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
+      case "tree-fold": { const k = el.dataset.k; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
       // A question in Claude Code's own menu: talk it through on the side; the answer goes back into the menu.
       case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: ref.l.pendingAsk.id, qi }); break; }
       // Generated cards
@@ -842,7 +876,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (S.picker) { closePicker(); return; }
     // Esc closes the side chat only from inside it, and never throws away typing.
-    const inPanel = el.closest && el.closest("#panel");
+    const inPanel = el.closest && el.closest("#railpane .sp-foot, #railpane .sp-body");
     if (inPanel && S.sideOpen && !(el.value || "").trim()) closeSide(false);
     return;
   }
@@ -1083,7 +1117,7 @@ function decodeIn(node) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const rows = node.matches && node.matches("[data-decode]") ? [node] : [...(node.querySelectorAll ? node.querySelectorAll("[data-decode]") : [])];
   rows.forEach((row, ri) => {
-    const lbl = row.querySelector(".rl"); if (!lbl || lbl.dataset.decoded || lbl.classList.contains("shimmer")) return;
+    const lbl = row.querySelector(":scope > .rl, :scope > .th > .tl"); if (!lbl || lbl.dataset.decoded || lbl.classList.contains("shimmer")) return;
     lbl.dataset.decoded = "1";
     const text = lbl.textContent, n = text.length; if (!n) return;
     const per = Math.max(1, Math.ceil(n / 33)), chars = "abcdefghijklmnopqrstuvwxyz0123456789";

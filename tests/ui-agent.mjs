@@ -73,7 +73,7 @@ try {
   check("clicking the step opens the question with Discuss it", await waitFor(`!!document.querySelector('#railpane .at-q [data-act=discuss-ask]')`, 5000));
   await sleep(400); await shot("question-open");
   await clickSel("#railpane [data-act=discuss-ask]");
-  check("side chat opens in the rail", await waitFor(`!!document.querySelector('#railpane .sp-head') && document.getElementById('panel').hidden`, 5000));
+  check("side chat opens in the rail", await waitFor(`!!document.querySelector('#railpane .sp-head')`, 5000));
   check("side chat opener arrives", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 180000));
   await sleep(400); await shot("side-open");
   await clickSel("#sp-in"); await typeText("It is a calm wellness brand. I am torn between green and a soft teal. Which fits better?");

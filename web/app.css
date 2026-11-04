@@ -637,3 +637,52 @@ button.pl-now.needs > .ic:last-child { margin-left: auto; width: 12px; height: 1
 .railpane .sp-composed .h > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Under the amber step, cards don't repeat what the step already says. */
 .attn .qcard .eyebrow .tag, .attn .qcard .eyebrow .stat { display: none; }
+
+/* ---- The conversation's flowchart: a branching tree, drawn like a git graph ---- */
+.tree { margin-top: 12px; }
+.tree.in-plan { margin-top: 6px; }
+.tr { list-style: none; margin: 0; padding: 0 0 0 9px; }
+.tr.root { padding-left: 0; }
+.tn { position: relative; padding-left: 18px; }
+.tr.root > .tn { padding-left: 0; }
+/* Connectors: a vertical line down the siblings and a short tick into each node. */
+.tn::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1.5px solid var(--grey-line); }
+.tn:last-child::before { bottom: auto; height: 13px; }
+.tn::after { content: ""; position: absolute; left: 0; top: 13px; width: 12px; border-top: 1.5px solid var(--grey-line); }
+.tr.root > .tn::before, .tr.root > .tn::after { display: none; }
+.tn.next::after, .tn.next::before { border-color: var(--text-4); border-style: dashed; }
+.th { display: flex; align-items: center; gap: 8px; min-height: 26px; width: 100%; text-align: left; font-size: var(--fs-meta); line-height: 20px; color: var(--text-1); padding: 3px 0; min-width: 0; }
+button.th { cursor: pointer; border-radius: 6px; }
+button.th:hover .tl { text-decoration: underline; text-decoration-color: var(--text-4); text-underline-offset: 3px; }
+.th .tl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn.goal > .th .tl { font-weight: 500; }
+.tn.done > .th, .tn.next > .th { color: var(--text-2); }
+.tn.dropped > .th { color: var(--text-3); }
+.tn.dropped > .th .tl { text-decoration: line-through; text-decoration-color: var(--text-4); }
+.th .tnote, .th .tcount { margin-left: auto; flex: none; font-size: var(--fs-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.th .tcount + .ic, .th .tnote + .ic { flex: none; color: var(--text-3); }
+/* Markers: a check for done, a cross for dropped, a hollow ring for later, a coloured dot for now. */
+.tm { width: 14px; height: 14px; flex: none; display: grid; place-items: center; border-radius: 50%; position: relative; }
+.tm .ic { width: 12px; height: 12px; stroke-width: 2.2; }
+.tm.done { color: var(--accent-dot); }
+.tm.dropped { color: var(--text-3); }
+.tm.next { box-shadow: inset 0 0 0 1.5px var(--text-4); width: 10px; height: 10px; margin: 0 2px; }
+.tm.current { width: 10px; height: 10px; margin: 0 2px; background: var(--accent-dot); }
+.tm.current.needs { background: var(--amber-dot); box-shadow: 0 0 0 4px var(--amber-halo); animation: pulse 1.6s var(--ease-in-out) infinite; }
+.tm.current.idle { background: var(--text-3); }
+.tm.current.done { background: var(--violet-dot); }
+.tm.current.run::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--accent-dot); border-right-color: var(--accent-dot); animation: spin var(--t-spin) linear infinite; }
+/* The step being worked on is tinted by what the agent is doing, like the plan's current step. */
+.tn.leaf > .th { margin: 2px -8px 0; padding: 4px 8px; width: calc(100% + 16px); border-radius: 10px 10px 0 0; background: var(--bg-raised); font-weight: 500; color: var(--text-1); }
+.tn.leaf.run > .th { background: var(--accent-tint); color: var(--accent-ink); }
+.tn.leaf.needs > .th { background: var(--amber-tint); color: var(--amber-ink); box-shadow: inset 0 1px 0 var(--amber-ring), inset 1px 0 0 var(--amber-ring), inset -1px 0 0 var(--amber-ring); }
+.tn.leaf > .t-live { margin: 0 -8px 4px; padding: 0 8px 8px 30px; border-radius: 0 0 10px 10px; background: var(--bg-raised); }
+.tn.leaf.run > .t-live { background: var(--accent-tint); }
+.tn.leaf.needs > .t-live { background: var(--amber-tint); box-shadow: inset 0 -1px 0 var(--amber-ring), inset 1px 0 0 var(--amber-ring), inset -1px 0 0 var(--amber-ring); }
+.tree > .t-live { margin-top: 8px; }
+.t-live .pl-now { margin-top: 0; }
+
+/* A saved session: the conversation in the middle, its flowchart in the rail. */
+.main.withrail .scroll { margin-right: var(--rail-w); }
+.railpane #goal { border: 0; box-shadow: none; background: transparent; padding: 0; }
+.railpane #goal .ghead h2 { font-size: var(--fs-title); }

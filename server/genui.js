@@ -1,32 +1,38 @@
-// Generative UI: read a session and decide what to show — its goal, its flow, and a card for
-// each thing the agent is waiting on the user for. The model picks components from a fixed kit.
-// The flow grows with the work: finished steps are kept as they were and new steps are appended.
-// When the agent keeps its own task list (Codex's plan, Claude's TodoWrite), that list is the flow.
+// Generative UI: read a session and decide what to show: its flowchart, what is happening now, and
+// a card for each thing the agent is waiting on the user for. The model picks components from a
+// fixed kit. The flowchart (flowtree.js) only grows: each update reads what is new in the
+// conversation and returns operations on the tree, so nothing settled is ever rewritten.
+// When the agent keeps its own task list (Codex's plan, Claude's TodoWrite) the app shows that too.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DATA, MODELS } from "./config.js";
 import { readSession, digest } from "./transcripts.js";
 import { claudeCall } from "./claude-call.js";
+import { emptyTree, applyOps, stepsFromTree, treeText, currentGoal } from "./flowtree.js";
 
 const CACHE = path.join(DATA, "gen");
 fs.mkdirSync(CACHE, { recursive: true });
-export const MAX_STEPS = 30;
 
 export const SCHEMA = {
   type: "object",
   properties: {
-    title: { type: "string", description: "What this session is, 2-6 words, sentence case, no trailing period" },
-    goal: { type: "string", description: "The overall goal in one or two plain sentences, as the agent is pursuing it now" },
+    title: { type: "string", description: "What this session is about overall, 2-6 words, sentence case, no trailing period" },
+    goal: { type: "string", description: "What the user wants right now, in one or two plain sentences" },
     status: { type: "string", enum: ["working", "waiting", "done", "idle", "blocked"], description: "waiting = the agent's last turn ends asking the user something" },
     now: { type: "string", description: "One short line: what is happening right now or what the agent is waiting for" },
-    steps: {
-      type: "array", description: `The session's flow, in order, from the start to the goal: every step done so far, the current one, and the ones still to come. Up to ${MAX_STEPS} steps.`,
+    ops: {
+      type: "array", description: "Changes to the flowchart, applied in order. Empty if nothing changed.",
       items: { type: "object", properties: {
-        label: { type: "string", description: "2-6 words, sentence case" },
-        state: { type: "string", enum: ["done", "current", "next"] },
-        note: { type: "string", description: "Optional short meta, e.g. '14 files' or 'PR #12'. Empty if none" },
-      }, required: ["label", "state"] },
+        op: { type: "string", enum: ["add", "state", "rename"] },
+        id: { type: "string", description: "state/rename: the existing node's id, or the ref of a node added earlier in this list" },
+        ref: { type: "string", description: "add: a short handle for the new node so later ops can point at it, e.g. 'a'" },
+        parent: { type: "string", description: "add: the id or ref of the goal (or step) it belongs under; empty for a new top-level goal" },
+        kind: { type: "string", enum: ["goal", "step"] },
+        label: { type: "string", description: "add/rename: 2-6 words, sentence case" },
+        state: { type: "string", enum: ["done", "current", "next", "dropped"] },
+        note: { type: "string", description: "Optional short meta, e.g. '14 files' or 'PR #12'" },
+      }, required: ["op"] },
     },
     cards: {
       type: "array", description: "One card per open question or decision the agent is waiting on the user for in its LATEST turn. Empty if it isn't waiting.",
@@ -45,52 +51,22 @@ export const SCHEMA = {
       }, required: ["kind", "title"] },
     },
   },
-  required: ["title", "goal", "status", "now", "steps", "cards"],
+  required: ["title", "goal", "status", "now", "ops", "cards"],
 };
 
-const SYSTEM = `You read a coding or operations agent's session transcript (Claude Code, Codex or Grok) and produce the data for a calm, compact UI about it.
-Rules:
-- The goal is the agent's overall objective as it stands now, not just the first message.
-- Steps are the session's flow and it GROWS with the work. If a previous flow is given: copy every step it marks "done" exactly as written, in the same order, at the start of your list; never reword, merge or drop them. Then give the current step and the steps still to come, adding new ones as the work reveals them. Mark a step done only when the transcript shows it finished. Exactly one step is "current" unless everything is done. At most ${MAX_STEPS} steps; short sentence-case labels. A step is a unit of work the user would recognise ("Create step-3.txt", "Write the pricing section"), never a single command, wait, check or reply on its own; fold those into the step they serve. When the work is a list of separate items, keep one step per item rather than bundling them.
-- Cards are ONLY for things the agent's latest turn is waiting on the user for. Split a message that asks several questions into one card each. Use the agent's own options when it offers them; mark the one it recommends. Never invent questions. If the agent is still working or finished without asking, return no cards.
-- If an open multiple-choice question block is included, do NOT make cards for it (the app shows it separately).
-- Write plainly: no jargon the user didn't use, no emojis, no marketing tone.`;
+const SYSTEM = `You keep a live flowchart of a conversation between a user and a coding or operations agent (Claude Code, Codex or Grok), and produce the data for a calm, compact UI about it.
+The flowchart is a tree. Goal nodes are what the user asked for. Step nodes under a goal are the units of work toward it, ones a user would recognise ("Map the nav entries", "Write the pricing section"); never a single command, wait, check or reply on its own, and when the work is a list of separate items, one step per item.
+It only grows. You see the tree so far and what is new in the conversation, and you return operations:
+- add: a new goal or step. The conversation's first goal is the trunk. Every user message that asks for new or different work starts a new goal, branching off the goal it grew out of (the trunk, when unsure); a message that only answers the agent, approves, or says go ahead continues the current goal. Steps go under their goal, in order: the agent's work for that request.
+- state: mark a step done when the transcript shows it finished; current for the one the agent is on (exactly one, or the last one when it waits on the user); dropped when the user changed course and it will not happen.
+- rename: only for a step not started yet, when the work showed a clearer name.
+Never touch done or dropped nodes. Keep labels short and plain. If nothing changed, return no ops.
+Cards are ONLY for things the agent's latest turn is waiting on the user for: one card per question, the agent's own options when it gives them, its recommendation marked. Never invent questions. If the agent is still working or finished without asking, return no cards. If an open multiple-choice question block is included, make no cards for it (the app shows it separately).
+Write plainly: no jargon the user didn't use, no emojis, no marketing tone.`;
 
 const running = new Map();
-const nkey = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const latestPath = (file) => path.join(CACHE, crypto.createHash("sha1").update(file).digest("hex") + ".latest.json");
-
-function cacheKey(file, size, extra = "") {
-  return crypto.createHash("sha1").update(`${file}|${size}|${extra}|v4`).digest("hex");
-}
-
-// Two labels name the same step if one contains the other or they share most of their words
-// (the generator sometimes adds a detail like '(contains "1")' to a finished step).
-export function sameStep(a, b) {
-  const x = nkey(a), y = nkey(b);
-  if (!x || !y) return false;
-  // Numbers name different items ("Step 3" vs "Step 4", "#12" vs "#13"): if they differ, so do the steps.
-  const nums = (t) => [...new Set(t.match(/\d+/g) || [])].sort().join(",");
-  if (nums(x) !== nums(y)) return false;
-  if (x === y || x.startsWith(y) || y.startsWith(x)) return true;
-  const A = new Set(x.split(" ")), B = new Set(y.split(" "));
-  const inter = [...A].filter((w) => B.has(w)).length;
-  return inter / Math.max(A.size, B.size) >= 0.75;
-}
-
-// Finished steps never move or disappear: re-anchor any the model dropped or reworded, then cap.
-export function mergeSteps(prev = [], next = []) {
-  const done = prev.filter((s) => s.state === "done");
-  const rest = next.filter((s) => !done.some((d) => sameStep(d.label, s.label)));
-  let steps = [...done.map((s) => ({ ...s, state: "done" })), ...rest];
-  if (!steps.some((s) => s.state === "current") && steps.some((s) => s.state === "next")) steps = steps.map((s, i, a) => (i === a.findIndex((x) => x.state === "next") ? { ...s, state: "current" } : s));
-  return steps.slice(-MAX_STEPS);
-}
-
-// The agent's own task list, when it keeps one, is exact and needs no model call.
-export function planSteps(plan) {
-  return (plan || []).slice(0, MAX_STEPS).map((p) => ({ label: p.label, state: p.state, note: "" }));
-}
+function cacheKey(file, size, extra = "") { return crypto.createHash("sha1").update(`${file}|${size}|${extra}|v5`).digest("hex"); }
 
 export function cached(file) {
   try {
@@ -98,12 +74,25 @@ export function cached(file) {
     const p = path.join(CACHE, cacheKey(file, st.size) + ".json");
     if (fs.existsSync(p)) return { ...JSON.parse(fs.readFileSync(p, "utf8")), fresh: true };
     // Fall back to the latest generation for this file, even if the transcript has grown since.
-    if (fs.existsSync(latestPath(file))) return { ...JSON.parse(fs.readFileSync(latestPath(file), "utf8")), fresh: false };
+    const latest = JSON.parse(fs.readFileSync(latestPath(file), "utf8"));
+    if (latest.tree) return { ...latest, fresh: false };
   } catch {}
   return null;
 }
 
-// midTurn: the agent is still working, so only the goal and flow are updated (no cards).
+// Only what happened since the tree was last updated, newest kept when it is long.
+function eventsText(events, maxChars = 30000) {
+  const rows = events.map((e) => e.role === "user" ? `USER: ${clip(e.text, 2500)}` : e.role === "assistant" ? `AGENT: ${clip(e.text, 3000)}`
+    : e.role === "tool" ? `  [tool ${e.tool}] ${clip(typeof e.input === "string" ? e.input : JSON.stringify(e.input || ""), 220)}`
+    : e.role === "tool_result" ? `  [result] ${clip(e.text, 160)}` : e.role === "error" ? `  [error] ${clip(e.text, 300)}` : "").filter(Boolean);
+  let body = "";
+  for (let i = rows.length - 1; i >= 0; i--) { if (body.length + rows[i].length > maxChars) { body = `[… ${i + 1} earlier events omitted …]\n` + body; break; } body = rows[i] + "\n" + body; }
+  return body;
+}
+const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
+
+// midTurn: the agent is still working, so only the flowchart and now-line are updated (no cards).
+// force: rebuild the flowchart from the whole conversation.
 export async function generate(harness, file, { force = false, midTurn = false } = {}) {
   const st = fs.statSync(file);
   const key = cacheKey(file, st.size);
@@ -114,19 +103,27 @@ export async function generate(harness, file, { force = false, midTurn = false }
     const parsed = readSession(harness, file);
     let prev = null;
     try { prev = JSON.parse(fs.readFileSync(latestPath(file), "utf8")); } catch {}
-    const prevBlock = prev && prev.steps && prev.steps.length && !parsed.plan
-      ? `[PREVIOUS FLOW — keep its done steps exactly]\n${prev.steps.map((s, i) => `${i + 1}. [${s.state}] ${s.label}${s.note ? ` (${s.note})` : ""}`).join("\n")}\n\n` : "";
-    const planBlock = parsed.plan ? `[THE AGENT'S OWN TASK LIST — the app shows it as the flow; use it for "now"]\n${parsed.plan.map((s) => `- [${s.state}] ${s.label}`).join("\n")}\n\n` : "";
-    const text = prevBlock + planBlock + digest(parsed);
-    const ask = midTurn
-      ? "The session transcript digest is on stdin. The agent is in the MIDDLE of a turn and still working: status must be \"working\" and cards must be empty. Update the goal, flow and now-line."
-      : "The session transcript digest is on stdin. Produce the UI data.";
+    const ev = parsed.events;
+    let tree = !force && prev && prev.tree ? prev.tree : emptyTree();
+    // A transcript that got shorter (compacted, rewritten) is read again from the start.
+    if (tree.cursor > ev.length) tree = emptyTree();
+    const fresh = !tree.nodes.length;
+    const planBlock = parsed.plan ? `[THE AGENT'S OWN TASK LIST, shown by the app as is; use it for steps and "now"]\n${parsed.plan.map((s) => `- [${s.state}] ${s.label}`).join("\n")}\n\n` : "";
+    const ask = (midTurn ? "The agent is in the MIDDLE of a turn and still working: status must be \"working\" and cards must be empty. " : "") +
+      (fresh ? "The flowchart is empty: build it from the whole conversation with add ops (refs link children to parents)." : "Update the flowchart with what is new.");
+    const text = fresh
+      ? planBlock + digest(parsed)
+      : `[FLOWCHART SO FAR]\n${treeText(tree)}\n\n[THE CONVERSATION'S FIRST MESSAGE]\n${clip((ev.find((e) => e.role === "user") || {}).text || "", 1500)}\n\n${planBlock}[NEW SINCE THE LAST UPDATE, oldest to newest]\n${eventsText(ev.slice(Math.max(0, tree.cursor - 2))) || "(nothing new)"}` +
+        (parsed.pendingAsk ? `\n\n[OPEN MULTIPLE-CHOICE QUESTION FROM THE AGENT]\n${JSON.stringify(parsed.pendingAsk.input)}` : "");
     const r = await claudeCall({ lane: "gen", model: MODELS.generate, lean: true, schema: SCHEMA, system: SYSTEM, stdin: text, prompt: ask, timeoutMs: 180000 });
     if (!r.data) throw new Error("The generator returned no data");
     const data = { ...r.data };
     if (midTurn) { data.cards = []; data.status = "working"; }
-    data.steps = parsed.plan ? planSteps(parsed.plan) : mergeSteps(prev ? prev.steps : [], data.steps || []);
-    const out = { ...data, source: parsed.plan ? "agent" : "generated", midTurn, at: Date.now(), cost: r.cost, size: st.size };
+    const userTurns = ev.filter((e) => e.role === "user").length;
+    tree = { ...applyOps(tree, data.ops || [], userTurns), cursor: ev.length };
+    const g = currentGoal(tree);
+    const out = { title: data.title, goal: data.goal || (g && g.label) || "", status: data.status, now: data.now, cards: data.cards || [],
+      tree, steps: stepsFromTree(tree), source: parsed.plan ? "agent" : "generated", midTurn, at: Date.now(), cost: r.cost, size: st.size };
     fs.writeFileSync(p, JSON.stringify(out));
     fs.writeFileSync(latestPath(file), JSON.stringify(out));
     return { ...out, fresh: true };
