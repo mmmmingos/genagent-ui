@@ -79,17 +79,15 @@ try {
   // The real terminal is always beside the rail.
   check("terminal shows the real Claude Code", await ev(`!!document.querySelector('.xterm-rows') && document.querySelector('.xterm-rows').textContent.length > 50`));
   // Side chat on the remaining open card.
-  await ev(`(document.querySelector('.qcard[id^=gc-] [data-act=discuss]')||document.querySelector('[data-act=side-toggle]')).click()`);
+  await ev(`document.querySelector('.qcard[id^=gc-] [data-act=discuss]').click()`);
   await sleep(600); await shot(`10-side-opening-${theme}`);
-  check("side chat opener", await waitFor(`document.querySelectorAll('.sp-ai').length >= 1`, 180000));
-  await sleep(400); await shot(`11-side-open-${theme}`);
+  check("Discuss it opens, ready to type", await waitFor(`!!document.getElementById('sp-in')`, 5000));
   await ev(`(()=>{const t=document.getElementById('sp-in'); t.value='We are thinking no free trial, but a money-back guarantee. Sensible?'; document.querySelector('[data-act=side-msg]').click();})()`);
-  check("side reply", await waitFor(`document.querySelectorAll('.sp-ai').length >= 2`, 180000));
-  await ev(`document.querySelector('[data-act=side-compose]').click()`);
-  check("composed answer", await waitFor(`!!document.getElementById('sp-composed') && document.getElementById('sp-composed').value.length > 20`, 180000));
-  await sleep(300); await shot(`12-side-composed-${theme}`);
-  await ev(`(document.querySelector('[data-act=side-use-composed]')||document.querySelector('[data-act=side-send]')).click()`);
-  check("side chat closed back to the plan", await waitFor(`!document.querySelector('#railpane .sp-head') && !!document.querySelector('#railpane .pl-scroll')`, 10000));
+  check("side reply", await waitFor(`document.querySelectorAll('.sp-ai').length >= 1`, 240000));
+  await sleep(400); await shot(`11-side-open-${theme}`);
+  await ev(`document.querySelector('[data-act=side-answer]').click()`);
+  check("Answer with this answers the card and closes back to the flowchart", await waitFor(`!document.querySelector('#railpane .sp-head') && document.querySelectorAll('#railpane .qsum-card').length >= 2`, 180000));
+  await sleep(300); await shot(`12-side-answered-${theme}`);
   // Send the answered cards from the step's answer bar.
   if (!(await ev(`!!document.querySelector('#railpane .attn')`))) await ev(`document.querySelector('#railpane button.pl-now.needs')?.click()`);
   await sleep(300);

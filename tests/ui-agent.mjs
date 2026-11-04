@@ -73,23 +73,20 @@ try {
   check("clicking the step opens the question with Discuss it", await waitFor(`!!document.querySelector('#railpane .at-q [data-act=discuss-ask]')`, 5000));
   await sleep(400); await shot("question-open");
   await clickSel("#railpane [data-act=discuss-ask]");
-  check("side chat opens in the rail", await waitFor(`!!document.querySelector('#railpane .sp-head')`, 5000));
-  check("side chat opener arrives", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 180000));
+  check("Discuss it opens in the rail with the question pinned", await waitFor(`!!document.querySelector('#railpane .sp-head') && /colour/i.test(document.querySelector('#railpane .sp-q')?.textContent||'')`, 5000));
+  check("you can type straight away (no waiting for the agent)", await ev(`!!document.getElementById('sp-in') && !document.querySelector('[data-act=side-msg]').disabled`));
   await sleep(400); await shot("side-open");
   await clickSel("#sp-in"); await typeText("It is a calm wellness brand. I am torn between green and a soft teal. Which fits better?");
   await clickSel("[data-act=side-msg]");
-  check("side reply", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 2`, 180000));
-  await clickSel("[data-act=side-compose]");
-  check("composed answer", await waitFor(`(document.getElementById('sp-composed')||{}).value?.length > 3`, 180000));
-  await sleep(300); await shot("side-composed");
-  const answer = await ev(`document.getElementById('sp-composed').value`);
-  // Claude Code's own menu is still open: the side chat says so. Press Esc in the real terminal, then send.
-  check("the side chat says Claude's question is still open", await ev(`!!document.querySelector('#railpane .sp-hint')`));
-  await ev(`document.querySelector('.xterm-helper-textarea').focus()`);
-  for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  check("Esc in Claude Code's menu frees the prompt", await waitFor(`!document.querySelector('#railpane .sp-hint')`, 20000));
-  await clickSel("[data-act=side-use-composed]");
-  check("side chat closes back to the plan", await waitFor(`!document.querySelector('#railpane .sp-head') && !!document.querySelector('#railpane .pl-scroll')`, 30000));
+  check("the side agent (a fork of the session) replies", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 240000));
+  await shot("side-reply");
+  await clickSel("[data-act=side-answer]");
+  check("Answer with this: the draft lands under the question and the flowchart comes back", await waitFor(`!document.querySelector('#railpane .sp-head') && (document.querySelector('#railpane .at-draft textarea')||{}).value?.length > 3`, 180000));
+  const answer = await ev(`document.querySelector('#railpane .at-draft textarea').value`);
+  await sleep(300); await shot("draft");
+  await clickSel("#railpane [data-act=ask-send]");
+  check("Send closes Claude's question and the draft goes in as your message", await waitFor(`!GENUI.current().l.pendingAsk`, 20000));
+  check("the discussion is kept under the flowchart", await waitFor(`!!document.querySelector('#railpane .pl-side')`, 10000));
   let got = false;
   for (let i = 0; i < 120 && !got; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); got = !!(cur.file && fs.existsSync(cur.file) && /ANSWER=/.test(fs.readFileSync(cur.file, "utf8"))); }
   check(`Claude received the side chat's answer as your next message ("${String(answer).slice(0, 50)}")`, got);
@@ -99,7 +96,16 @@ try {
   check("Orchestrator lists the running agent", await waitFor(`!!document.getElementById(${JSON.stringify("ov-" + s.id)})`, 5000));
   check("Orchestrator has no saved-session history", await ev(`!document.querySelector('[id^=ovs-]')`));
   await sleep(500); await shot("orchestrator");
-  await api(`/api/sessions/${s.id}/stop`, {});
+  // Stop: one click asks, the second ends it; the ended session says so and offers what's next.
+  await ev(`GENUI.openLive(${JSON.stringify(s.id)})`); await sleep(500);
+  await clickSel("[data-act=stop-ask]");
+  check("Stop asks first", await waitFor(`!!document.querySelector('.stop-pop')`, 3000));
+  await shot("stop-confirm");
+  await clickSel(".stop-pop [data-act=stop-session]");
+  check("the ended session says so, with Resume, New session here and Close", await waitFor(`/Session (ended|stopped)/.test(document.getElementById("tend")?.textContent||'') && !!document.querySelector('#tend [data-act=session-close]')`, 10000));
+  await sleep(400); await shot("ended");
+  await clickSel("#tend [data-act=session-close]");
+  check("Close removes it from the running list", await waitFor(`!GENUI.S.live.has(${JSON.stringify(s.id)}) && GENUI.S.page === 'overview'`, 8000));
 } catch (e) { console.log("FAIL exception " + e.message); }
 finally {
   console.log("errors:", errors.length ? errors : "none");

@@ -60,6 +60,7 @@ It only grows. You see the tree so far and what is new in the conversation, and 
 - add: a new goal or step. The conversation's first goal is the trunk. Every user message that asks for new or different work starts a new goal, branching off the goal it grew out of (the trunk, when unsure); a message that only answers the agent, approves, or says go ahead continues the current goal. Steps go under their goal, in order: the agent's work for that request.
 - state: mark a step done when the transcript shows it finished; current for the one the agent is on (exactly one, or the last one when it waits on the user); dropped when the user changed course and it will not happen.
 - rename: only for a step not started yet, when the work showed a clearer name.
+A user message that starts "About your question" is the user's answer to the agent's question: it continues the current goal, not a new one.
 Never touch done or dropped nodes. Keep labels short and plain. If nothing changed, return no ops.
 Cards are ONLY for things the agent's latest turn is waiting on the user for: one card per question, the agent's own options when it gives them, its recommendation marked. Never invent questions. If the agent is still working or finished without asking, return no cards. If an open multiple-choice question block is included, make no cards for it (the app shows it separately).
 Write plainly: no jargon the user didn't use, no emojis, no marketing tone.`;

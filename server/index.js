@@ -126,6 +126,10 @@ const server = http.createServer(async (req, res) => {
     if (m) {
       const [, id, action] = m; checkId(id);
       if (action === "send") { live.send(id, String(B.text || "")); return json(res, 200, { ok: true }); }
+      // A worked-out answer to the agent's open question: close its menu (Esc), then type it as the user's message.
+      if (action === "answer") { await live.answerQuestion(id, String(B.text || "")); return json(res, 200, { ok: true }); }
+      // An ended session leaves the running list; its transcript stays in the saved sessions.
+      if (action === "forget") { live.forget(id); return json(res, 200, { ok: true }); }
       if (action === "terminal") { live.answerTerminal(id, B.choice); return json(res, 200, { ok: true }); }
       if (action === "interrupt") { live.interrupt(id, B.key === "ctrlc" ? "\x03" : "\x1b"); return json(res, 200, { ok: true }); }
       if (action === "stop") { live.stop(id); return json(res, 200, { ok: true }); }
@@ -144,7 +148,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/side" && req.method === "POST") {
       const file = B.file ? findFile(B.harness, B.file) : null;
       if (B.mainId) checkId(B.mainId);
-      return json(res, 200, side.open({ harness: B.harness, file, mainId: B.mainId, cwd: B.cwd, topic: B.topic }));
+      return json(res, 200, side.open({ harness: B.harness, file, mainId: B.mainId, cwd: B.cwd, topic: B.topic, first: B.first ? String(B.first).slice(0, 8000) : "" }));
     }
     const sm = p.match(/^\/api\/side\/([^/]+)(?:\/(\w+))?$/);
     if (sm) {

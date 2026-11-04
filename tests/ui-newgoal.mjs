@@ -108,7 +108,8 @@ try {
   await shot("ng-06-ran");
   if (sid) await fetch(`http://127.0.0.1:${PORT}/api/sessions/${sid}/stop`, { method: "POST", headers: { "content-type": "application/json", "x-genui-token": TOKEN }, body: "{}" });
   // Plan it path: folder remembered, send the goal for planning.
-  await clickSel("#side .srow-new"); await waitFor(`!!document.getElementById('ng-goal')`);
+  await clickSel("#side [data-act=go][data-page=overview]"); await clickSel("[data-act=go][data-page=plan]"); await waitFor(`!!document.getElementById('ng-goal')`);
+  check("New session has no planning button; planning is on the Orchestrator", await ev(`/Plan a goal/.test(document.querySelector('.head-t').textContent)`));
   await clickSel("#ng-goal"); await typeText("Create two text files, a.txt and b.txt, each with one line of text.");
   await clickSel("[data-act=plan]");
   check("planning starts", await waitFor(`!!document.getElementById('planning') || !!document.getElementById('plan-card')`, 8000));

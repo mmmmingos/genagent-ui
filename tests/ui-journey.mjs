@@ -73,7 +73,7 @@ try {
   // Folder trust in a fresh folder, if asked: open the amber step and trust.
   for (let i = 0; i < 30; i++) { if (await ev(`/Trust/.test(document.querySelector('#railpane button.pl-now.needs')?.textContent||'')`)) { await clickSel("#railpane button.pl-now.needs"); await sleep(300); await clickSel("#railpane [data-act=term-yes]"); break; } if (await ev(`GENUI.current().state === 'run'`)) break; await sleep(1000); }
   check("instant flowchart shows the goal from the first message within seconds", await waitFor(`${goals("#railpane")}.some(t => /notes\\.md/i.test(t))`, 20000));
-  check("the side chat is reachable at all times", await ev(`!!document.querySelector('#railpane .side-btn')`));
+  check("two entry points: no general side chat; + starts a new session in this folder", await ev(`!document.querySelector('#railpane .side-btn') && !!document.querySelector('[data-act=new-here]')`));
   await sleep(1500); await shot("working");
 
   // 2. Claude asks in its own menu; the step turns amber; Discuss it; the answer goes into the menu.
@@ -84,20 +84,17 @@ try {
   await waitFor(`!!document.querySelector('#railpane [data-act=discuss-ask]')`, 5000);
   await shot("question-open");
   await clickSel("#railpane [data-act=discuss-ask]");
-  check("Discuss it opens a side chat that knows the session", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 180000));
+  check("Discuss it opens with the question pinned, ready to type", await waitFor(`!!document.querySelector('#railpane .sp-q') && !!document.getElementById('sp-in')`, 5000));
   await clickSel("#sp-in"); await typeText("We sell to people who love coffee but are busy. Developers or founders? Keep it short.");
   await clickSel("[data-act=side-msg]");
-  await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 2`, 180000);
+  check("the side agent, a copy of the session, replies", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 240000));
   await shot("side-chat");
-  await clickSel("[data-act=side-compose]");
-  await waitFor(`(document.getElementById('sp-composed')||{}).value?.length > 3`, 180000);
-  // Claude Code's own menu is still open: the side chat says so. Press Esc in the real terminal, then send.
-  check("the side chat says Claude's question is still open", await ev(`!!document.querySelector('#railpane .sp-hint')`));
-  await ev(`document.querySelector('.xterm-helper-textarea').focus()`);
-  for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  check("Esc in Claude Code's menu frees the prompt", await waitFor(`!document.querySelector('#railpane .sp-hint')`, 20000));
-  await clickSel("[data-act=side-use-composed]");
-  check("the side chat's answer goes in as your next message, and Claude carries on", await waitFor(`!document.querySelector('#railpane .sp-head')`, 30000) && await (async () => { for (let i = 0; i < 60; i++) { const s = await state(sid); const f = s && s.file && fs.existsSync(s.file) ? fs.readFileSync(s.file, "utf8") : ""; if (s && !s.native && /About your question/.test(f)) return true; await sleep(1000); } return false; })());
+  await clickSel("[data-act=side-answer]");
+  check("Answer with this puts a draft under the question", await waitFor(`(document.querySelector('#railpane .at-draft textarea')||{}).value?.length > 3`, 180000));
+  await shot("draft");
+  await clickSel("#railpane [data-act=ask-send]");
+  check("Send: GenUI closes the question, the answer goes in as your message, Claude carries on", await (async () => { for (let i = 0; i < 60; i++) { const s = await state(sid); const f = s && s.file && fs.existsSync(s.file) ? fs.readFileSync(s.file, "utf8") : ""; if (s && !s.pendingAsk && /About your question/.test(f)) return true; await sleep(1000); } return false; })());
+  check("the discussion is kept under the flowchart", await waitFor(`!!document.querySelector('#railpane .pl-side')`, 10000));
   for (let i = 0; i < 240; i++) { const s = await state(sid); if (s && s.status === "idle") break; await sleep(1000); }
   await sleep(4000); await shot("answered");
 

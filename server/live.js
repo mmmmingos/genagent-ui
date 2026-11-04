@@ -53,7 +53,7 @@ export function summary(s) {
     native: s.native ? s.native.kind : null,
     pendingAsk: s.ask ? { id: s.ask.id, questions: s.ask.questions } : null,
     pendingPermission: s.perm ? { id: s.perm.id, tool: s.perm.tool, input: s.perm.input } : null,
-    terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity,
+    terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity, stopped: !!s.stopped,
   };
 }
 
@@ -319,6 +319,7 @@ export function interrupt(id, key) {
 export function stop(id) {
   const s = sessions.get(id);
   if (!s) return;
+  s.stopped = true;
   try { s.pty.kill(); } catch {}
   clearInterval(s.watcher);
 }
@@ -350,6 +351,26 @@ export function onHook(id, ev) {
   if (name === "PermissionRequest") { s.perm = { id: crypto.randomUUID(), tool: ev.tool_name, input: ev.tool_input }; s.status = "needs"; changed(s, "permission"); sniffScreen(s); return; }
   if (name === "PreToolUse" && s.status !== "working" && !s.native) s.status = "working";
   changed(s);
+}
+
+// The one key GenUI presses in Claude Code's menus: Esc, once, to close an open AskUserQuestion menu
+// so a worked-out answer can be typed as the user's next message. The hook confirms it closed first.
+export async function answerQuestion(id, text) {
+  const s = sessions.get(id);
+  if (!s?.alive) throw new Error("This session isn't running");
+  if (s.ask) {
+    s.pty.write("\x1b");
+    const t = Date.now();
+    while (s.ask && Date.now() - t < 6000) await new Promise((r) => setTimeout(r, 100));
+    if (s.ask) throw new Error("Claude Code's question didn't close. Press Esc in the terminal, then send again.");
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  send(id, text);
+}
+
+export function forget(id) {
+  const s = sessions.get(id);
+  if (s && !s.alive) sessions.delete(id);
 }
 
 // Folder-trust and similar terminal prompts: the safe default needs a keypress the user chooses.

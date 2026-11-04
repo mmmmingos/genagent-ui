@@ -20,8 +20,8 @@ const READ_ONLY_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch";
 const RULES = `You are in a SIDE DISCUSSION opened from GenUI Agent. The user wants to think something through with you before answering the main agent. Your job is to advise, not act:
 - Do not edit files, run commands or take actions. You may read files and search to check facts.
 - Keep replies short and conversational: a few sentences, plain language, concrete.
-- Help the user reach a clear decision. Point out trade-offs and what the main agent will need to know.
-- Nothing you say reaches the main agent until the user presses Compose and Send.`;
+- Help the user reach a clear decision. Point out trade-offs and what the main agent will need to know. When it is a question the main agent asked with options, end with a clear recommendation among them.
+- Nothing you say reaches the main agent until the user presses "Answer with this" and sends the answer.`;
 
 const pub = (s) => ({ ...s, busy: !!s.busy });
 function save(s) { const { ...rest } = s; fs.writeFileSync(path.join(DIR, s.id + ".json"), JSON.stringify(rest)); bus.emit("side", pub(s)); }
@@ -45,13 +45,17 @@ const opts = (s, extra) => ({ model: MODELS.side, tools: READ_ONLY_TOOLS, userSe
 function track(s, r) { s.forkId = r.sessionId || s.forkId; s.forkIds = [...new Set([...(s.forkIds || []), s.forkId])]; s.contextTokens = r.contextTokens; s.cost += r.cost; forkCache.at = 0; }
 
 // Open a side discussion. Returns at once; the opener arrives later through the bus.
-export function open({ harness, file, mainId, cwd, topic }) {
+export function open({ harness, file, mainId, cwd, topic, first }) {
   // A Codex or Grok side chat reads that session's transcript, so it must exist first.
   if (!(harness === "claude" && mainId) && !(file && fs.existsSync(file))) throw new Error("This session has no transcript yet. Try again after its first turn.");
   const id = crypto.randomUUID();
   const s = { id, harness, file, mainId, cwd, topic: topic || "", msgs: [], forkId: null, forkIds: [], contextTokens: 0, cost: 0, composed: "", createdAt: Date.now(), busy: true, err: "" };
   sides.set(id, s);
-  const opener = `${RULES}\n\nThe user opened this side discussion${topic ? ` about: "${topic}"` : ""}.\nStart by summarising, in 2-4 sentences, what the main agent needs from the user here and the key consideration, then ask what is on their mind.`;
+  // With a first message the side agent answers it straight away; without one it opens with a short summary.
+  const opener = first
+    ? `${RULES}\n\nThe user opened this side discussion${topic ? ` about the main agent's question: "${topic}"` : ""}.\nTheir first message: ${first}`
+    : `${RULES}\n\nThe user opened this side discussion${topic ? ` about: "${topic}"` : ""}.\nStart by summarising, in 2-4 sentences, what the main agent needs from the user here and the key consideration, then ask what is on their mind.`;
+  if (first) s.msgs.push({ who: "me", text: String(first) });
   (async () => {
     try {
       let r;
