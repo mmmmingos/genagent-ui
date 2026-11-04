@@ -73,7 +73,7 @@ try {
   // Folder trust in a fresh folder, if asked: open the amber step and trust.
   for (let i = 0; i < 30; i++) { if (await ev(`/Trust/.test(document.querySelector('#railpane button.pl-now.needs')?.textContent||'')`)) { await clickSel("#railpane button.pl-now.needs"); await sleep(300); await clickSel("#railpane [data-act=term-yes]"); break; } if (await ev(`GENUI.current().state === 'run'`)) break; await sleep(1000); }
   check("instant flowchart shows the goal from the first message within seconds", await waitFor(`${goals("#railpane")}.some(t => /notes\\.md/i.test(t))`, 20000));
-  check("two entry points: no general side chat; + starts a new session in this folder", await ev(`!document.querySelector('#railpane .side-btn') && !!document.querySelector('[data-act=new-here]')`));
+  check("Ask on the side is there any time; + starts a new session in this folder", await ev(`!!document.querySelector('#railpane [data-act=aside]') && !!document.querySelector('[data-act=new-here]')`));
   await sleep(1500); await shot("working");
 
   // 2. Claude asks in its own menu; the step turns amber; Discuss it; the answer goes into the menu.
@@ -97,6 +97,25 @@ try {
   check("the discussion is kept under the flowchart", await waitFor(`!!document.querySelector('#railpane .pl-side')`, 10000));
   for (let i = 0; i < 240; i++) { const s = await state(sid); if (s && s.status === "idle") break; await sleep(1000); }
   await sleep(4000); await shot("answered");
+
+  // 2b. Ask on the side: your own multi-step side conversation; what you work out can go in as a message.
+  for (let i = 0; i < 240; i++) { const st = await state(sid); if (st && st.status === "idle") break; await sleep(1000); }
+  await clickSel("#railpane [data-act=aside]");
+  check("Ask on the side opens, ready to type", await waitFor(`!!document.querySelector('#railpane .sp-head') && /Ask on the side/.test(document.querySelector('#railpane .sp-head').textContent) && !!document.getElementById('sp-in')`, 5000));
+  await clickSel("#sp-in"); await typeText("Which file did you read, and what is the business called? One line.");
+  await clickSel("[data-act=side-msg]");
+  check("the side agent replies", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 1`, 240000));
+  await clickSel("#sp-in"); await typeText("Good. Now suggest one short slogan for it, five words at most.");
+  await clickSel("[data-act=side-msg]");
+  check("and keeps going for more than one message", await waitFor(`document.querySelectorAll('#railpane .sp-ai').length >= 2`, 240000));
+  await shot("aside");
+  await clickSel("[data-act=side-answer]");
+  check("Write a message drafts it in the panel, editable", await waitFor(`(document.getElementById('sp-composed')||{}).value?.length > 3`, 180000));
+  await shot("aside-draft");
+  await clickSel("[data-act=aside-send]");
+  check("Send puts it in as your next message", await (async () => { for (let i = 0; i < 30; i++) { const st = await state(sid); const f = st && st.file && fs.existsSync(st.file) ? fs.readFileSync(st.file, "utf8") : ""; if (/slogan/i.test(f.split("Good. Now suggest").pop() || "") || st.status === "working") return true; await sleep(1000); } return false; })());
+  check("the aside is listed under the flowchart", await waitFor(`document.querySelectorAll('#railpane .pl-side').length >= 2`, 10000));
+  for (let i = 0; i < 240; i++) { const st = await state(sid); if (st && st.status === "idle") break; await sleep(1000); }
 
   // 3. A follow-up typed into the real terminal: the flowchart branches.
   const g1 = (await ev(goals("#railpane"))).length;

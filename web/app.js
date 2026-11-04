@@ -312,17 +312,18 @@ function railHTML(ref, g, ps) {
   }
   return railShell(ref, `${head}<ol class="pl">${rows}</ol>${attn}`);
 }
+const asideButton = () => `<button class="btn btn-neutral sm side-btn" data-act="aside" title="A side conversation about this session, as many messages as you like. It never touches the session unless you send something.">${icon("chat", "s14")}Ask on the side</button>`;
 // Questions you worked out on the side, kept with the session so you can see what you decided.
 function sidesList(ref) {
   const list = [...S.sides.values()].filter((sd) => sd.key.startsWith(refKey(ref) + "|") && sd.data && (sd.data.msgs || []).length);
   if (!list.length) return "";
-  return `<div class="pl-sides"><div class="pl-sides-h">${icon("chat", "s14")}Clarified on the side</div>${list.map((sd) => `<button class="pl-side" data-act="side-review" data-k="${esc(sd.key)}"><span class="tl">${esc(clip(sd.extra.question || "", 80))}</span><span class="tnote">${plural((sd.data.msgs || []).length, "message")}</span></button>`).join("")}</div>`;
+  return `<div class="pl-sides"><div class="pl-sides-h">${icon("chat", "s14")}On the side</div>${list.map((sd) => `<button class="pl-side" data-act="side-review" data-k="${esc(sd.key)}"><span class="tl">${esc(clip(sd.extra.question || (sd.data.msgs.find((m) => m.who === "me") || {}).text || "", 80))}</span><span class="tnote">${plural((sd.data.msgs || []).length, "message")}</span></button>`).join("")}</div>`;
 }
 // The rail's frame: scrolling content, then the side chat button and the context meter (and Resume once it has ended).
 function railShell(ref, inner) {
   const l = ref.l, ctx = ref.context;
   return `<div class="pl-scroll">${inner}${sidesList(ref)}</div>
-    <div class="pl-foot"><span class="sp"></span>${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
+    <div class="pl-foot">${asideButton()}<span class="sp"></span>${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
       </div>`;
 }
 
@@ -421,7 +422,7 @@ function sessionHTML(ref) {
     <div class="thread">${feed(ref)}${blockingCards(ref)}${genCards(ref, g)}</div>
     <div class="dock">${composer(ref)}</div>
   </div></div>
-  <aside class="railpane" id="railpane" aria-label="${curSide() ? "Side chat" : "Flowchart"}">${curSide() ? sideChatHTML(curSide()) : `<div class="pl-scroll">${goalCard(ref, g)}${sidesList(ref)}</div>`}</aside>`;
+  <aside class="railpane" id="railpane" aria-label="${curSide() ? "Side chat" : "Flowchart"}">${curSide() ? sideChatHTML(curSide()) : `<div class="pl-scroll">${goalCard(ref, g)}${sidesList(ref)}</div><div class="pl-foot">${asideButton()}</div>`}</aside>`;
 }
 
 // Goal card with the vertical flow rail (3.3). The footer follows the live state, not stale text.
@@ -684,25 +685,38 @@ function sideChatHTML(sd) {
   const busy = sd.busy || (d && d.busy);
   const agent = esc(S.labels[sd.ref.harness] || "The agent");
   const canAnswer = !sd.readonly && msgs.some((m) => m.who === "ai") && !busy;
+  const aside = !!x.aside, live = !!S.live.get(sd.ref.id)?.alive;
+  const title = sd.readonly ? (aside ? "Asked on the side" : "Clarified on the side") : aside ? "Ask on the side" : "Discuss it";
   return `
-    <div class="sp-head"><button class="ibtn" data-act="side-close" aria-label="Back to the flowchart" title="Back to the flowchart">${icon("back")}</button><div class="tt"><b>${sd.readonly ? "Clarified on the side" : "Discuss it"}</b><small>A copy of this session · ${agent} won't see this unless you send it</small></div></div>
-    <div class="sp-q"><div class="sp-qt">${esc(x.question || sd.topic)}</div>${(x.options || []).length ? `<div class="at-opts">${x.options.map((o, j) => `<span class="at-o" title="${esc(o.detail || "")}"><span class="num">${j + 1}</span>${esc(o.label)}</span>`).join("")}</div>` : ""}</div>
+    <div class="sp-head"><button class="ibtn" data-act="side-close" aria-label="Back to the flowchart" title="Back to the flowchart">${icon("back")}</button><div class="tt"><b>${title}</b><small>A copy of this session · ${agent} won't see this unless you send it</small></div>${aside && !sd.readonly ? `<button class="btn btn-text sm" data-act="aside-new" title="Start a fresh side conversation">New</button>` : ""}</div>
+    ${aside ? "" : `<div class="sp-q"><div class="sp-qt">${esc(x.question || sd.topic)}</div>${(x.options || []).length ? `<div class="at-opts">${x.options.map((o, j) => `<span class="at-o" title="${esc(o.detail || "")}"><span class="num">${j + 1}</span>${esc(o.label)}</span>`).join("")}</div>` : ""}</div>`}
     <div class="sp-body" id="sp-body">
       ${msgs.map((m, i) => m.who === "ai" ? `<div class="sp-ai" id="sm-${i}" data-anim>${md(m.text)}</div>` : `<div class="sp-me" id="sm-${i}">${esc(m.text)}</div>`).join("")}
       ${busy ? `<div class="sp-wait" id="sp-wait"><span class="spin"></span><span class="shimmer t2">${sd.composingBusy ? "Writing your answer" : d ? "Thinking" : "Reading the session"}</span></div>` : ""}
       ${sd.err ? `<div class="sp-err">${esc(sd.err)}</div>` : ""}
-      ${!msgs.length && !busy && !sd.err ? `<div class="sp-empty">Ask anything about this question. This agent has read the whole session and can check the project's files. When you're ready, it writes the answer for you.</div>` : ""}
+      ${!msgs.length && !busy && !sd.err ? `<div class="sp-empty">${aside ? `Ask anything about this session, over as many messages as you like. This agent has read the whole session and can check the project's files. Nothing reaches ${agent} unless you send it.` : "Ask anything about this question. This agent has read the whole session and can check the project's files. When you're ready, it writes the answer for you."}</div>` : ""}
     </div>
     <div class="sp-foot">
-      ${sd.readonly ? `<div class="sp-done">${icon("check", "s14")}<span>Answered. Kept here so you can see what you decided.</span></div>` : `
-      <div class="sp-compose"><textarea id="sp-in" data-keep data-draft="side:${esc(sd.key)}" rows="1" placeholder="What's unclear?" aria-label="Message the side agent"></textarea><button class="send sm" data-act="side-msg" aria-label="Send" ${busy ? "disabled" : ""}>${icon("up")}</button></div>
-      <div class="sp-actions"><span class="sp"></span><button class="btn btn-tint" data-act="side-answer" ${canAnswer ? "" : "disabled"} title="Write the answer from this discussion; you check it before it's sent">Answer with this</button></div>`}
+      ${sd.readonly ? `<div class="sp-done">${icon("check", "s14")}<span>${aside ? "Sent. Kept here for reference." : "Answered. Kept here so you can see what you decided."}</span></div>`
+      : aside && sd.draft != null ? `
+      <div class="sp-composed"><div class="h"><span>Message to ${agent} · editable</span></div><textarea id="sp-composed" data-keep data-draft="asidedraft:${esc(sd.key)}" aria-label="Message to send"></textarea></div>
+      <div class="sp-actions"><button class="btn btn-text" data-act="aside-back">Keep talking</button><span class="sp"></span><button class="btn btn-tint" data-act="aside-send" ${live && !S.inflight.has("aside-send") ? "" : "disabled"} title="${live ? "Typed into the session as your next message" : "This session isn't running"}">Send to ${agent}</button></div>`
+      : `
+      <div class="sp-compose"><textarea id="sp-in" data-keep data-draft="side:${esc(sd.key)}" rows="1" placeholder="${aside ? "Ask anything about this session" : "What's unclear?"}" aria-label="Message the side agent"></textarea><button class="send sm" data-act="side-msg" aria-label="Send" ${busy ? "disabled" : ""}>${icon("up")}</button></div>
+      <div class="sp-actions"><span class="sp"></span>${aside ? `<button class="btn btn-neutral" data-act="side-answer" ${canAnswer && live ? "" : "disabled"} title="Turn this into a message for ${agent}; you check it before it's sent">Write a message</button>` : `<button class="btn btn-tint" data-act="side-answer" ${canAnswer ? "" : "disabled"} title="Write the answer from this discussion; you check it before it's sent">Answer with this</button>`}</div>`}
     </div>`;
 }
 
 // One side discussion per question, kept with the session. Opening needs no call: the side agent
 // starts with your first message.
-const sideKey = (ref, x) => `${refKey(ref)}|${x.cardKey || `ask:${x.ask}:${x.qi || 0}`}`;
+const sideKey = (ref, x) => `${refKey(ref)}|${x.cardKey || (x.aside ? `aside:${x.aside}` : `ask:${x.ask}:${x.qi || 0}`)}`;
+// Ask on the side: your own side conversation about this session, any time. Reopens the one in progress.
+function openAside(fresh) {
+  const ref = current(); if (!ref) return;
+  const open = [...S.sides.values()].filter((sd) => sd.extra.aside && sd.key.startsWith(refKey(ref) + "|") && !sd.readonly).pop();
+  if (open && !fresh) { S.sideOpen = open.key; render(); setTimeout(() => { $("#sp-in")?.focus(); scrollSide(); }, 30); return; }
+  openSide({ aside: Date.now().toString(36), question: "" });
+}
 function openSide(extra) {
   const ref = current(); if (!ref) return;
   const key = sideKey(ref, extra);
@@ -721,7 +735,7 @@ async function sideMsg() {
   const sd = curSide(); const ta = $("#sp-in"); if (!ta || !sd || sd.busy || (sd.data && sd.data.busy)) return;
   const v = ta.value.trim(); if (!v) return;
   ta.value = ""; S.drafts.delete(ta.dataset.draft); autosize(ta); sd.err = ""; sd.busy = true;
-  const topic = `${sd.extra.question}${(sd.extra.options || []).length ? ` Options: ${sd.extra.options.map((o) => o.label).join("; ")}` : ""}`;
+  const topic = sd.extra.aside ? "" : `${sd.extra.question}${(sd.extra.options || []).length ? ` Options: ${sd.extra.options.map((o) => o.label).join("; ")}` : ""}`;
   try {
     if (!sd.data) {
       // The first message starts the side agent (a fork of the session), with the question as its subject.
@@ -747,15 +761,29 @@ async function sideAnswer() {
   const ref = current(), g = ref && genFor(ref.file);
   const known = ref ? openCards(ref.file, g).filter((x) => x.key !== sd.extra.cardKey && S.answers.get(x.key)).map((x) => ({ title: x.c.title, answer: S.answers.get(x.key) })) : [];
   try {
-    const r = await api(`/api/side/${sd.data.id}/compose`, { known, answerOnly: true });
+    const r = await api(`/api/side/${sd.data.id}/compose`, { known, answerOnly: !sd.extra.aside });
     sd.data = r;
     const text = String(r.composed || "").trim();
+    if (sd.extra.aside) { sd.draft = text; S.drafts.set(`asidedraft:${sd.key}`, text); sd.busy = false; sd.composingBusy = false; render(); setTimeout(() => $("#sp-composed")?.focus(), 30); return; }
     if (sd.extra.cardKey) { S.answers.set(sd.extra.cardKey, text); S.reopen.delete(sd.extra.cardKey); }
     else S.drafts.set(`askdraft:${sd.extra.ask}:${sd.extra.qi || 0}`, text);
     S.open.add("attn:" + sd.ref.id);
     S.sideOpen = null;
   } catch (e) { sd.err = e.message; }
   sd.busy = false; sd.composingBusy = false; render();
+}
+
+// Send what you worked out on the side as your next message. If the agent is asking you something
+// right now, that comes first (answer it, or Discuss it).
+async function asideSend(ref) {
+  const sd = curSide(); if (!sd) return;
+  const text = (($("#sp-composed") || {}).value || S.drafts.get(`asidedraft:${sd.key}`) || "").trim(); if (!text) return;
+  if (ref.l && ref.l.pendingAsk) { toast(`${S.labels[ref.harness] || "The agent"} is asking you something`, "Answer or discuss its question first, then send this.", "needs"); return; }
+  await guarded("aside-send", () => api(`/api/sessions/${ref.id}/send`, { text }));
+  S.drafts.delete(`asidedraft:${sd.key}`); sd.draft = null; sd.readonly = true; sd.sent = true;
+  if (sd.data) api(`/api/side/${sd.data.id}/sent`, { text }).catch(() => {});
+  S.sideOpen = null; render();
+  toast(`Sent to ${S.labels[ref.harness] || "the agent"}`, "", "ok", null, 3000);
 }
 
 // Send the drafted answer to the agent's question: GenUI closes the open question menu (Esc, once)
@@ -897,7 +925,7 @@ document.addEventListener("click", async (e) => {
       case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide({ ask: ref.l.pendingAsk.id, qi, question: x.question, options: (x.options || []).map((o) => ({ label: o.label, detail: o.description })) }); break; }
       case "ask-send": await askSend(ref, +el.dataset.qi); break;
       case "copy-question": { const x = (ref.l.pendingAsk.questions || [])[+el.dataset.qi] || {}; await navigator.clipboard.writeText(`${x.question}\n${(x.options || []).map((o, j) => `${j + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`).join("\n")}`); toast("Question copied", "", "ok", null, 2500); break; }
-      case "side-review": { const sd = S.sides.get(el.dataset.k); if (sd) { sd.readonly = !(ref.l && ref.l.pendingAsk && sd.extra.ask === ref.l.pendingAsk.id); S.sideOpen = sd.key; render(); scrollSide(); } break; }
+      case "side-review": { const sd = S.sides.get(el.dataset.k); if (sd) { sd.readonly = sd.extra.aside ? !!sd.sent : !(ref.l && ref.l.pendingAsk && sd.extra.ask === ref.l.pendingAsk.id); S.sideOpen = sd.key; render(); scrollSide(); } break; }
       // Generated cards
       case "pick": pickOption(ref, k, +el.dataset.i, +el.dataset.j); break;
       case "multi-done": { const c = genFor(ref.file).cards[+el.dataset.i]; setAnswer(k, [...(S.picks.get(k) || [])].map((j) => c.options[j].label).join(", ")); break; }
@@ -917,6 +945,10 @@ document.addEventListener("click", async (e) => {
       // Side chat
       case "side-msg": sideMsg(); break;
       case "side-answer": await sideAnswer(); break;
+      case "aside": openAside(false); break;
+      case "aside-new": openAside(true); break;
+      case "aside-back": { const sd = curSide(); if (sd) { sd.draft = null; render(); } break; }
+      case "aside-send": await asideSend(ref); break;
       // New goal
       case "pick-folder": openPicker(el, S.ng.cwd || ""); break;
       case "pk-up": browse(S.picker.parent); break;
