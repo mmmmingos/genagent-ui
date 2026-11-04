@@ -5,6 +5,11 @@ import morphdom from "/vendor/morphdom/morphdom-esm.js";
 import { md, esc, ago, kt, plural } from "/web/util.js";
 
 const $ = (s, r = document) => r.querySelector(s);
+// One session alone, without the sidebar: a pane of a split (an iframe) or a window of its own.
+// A pane asks the main window (its host) to open, close or start sessions, so they stay in step.
+const PANE = (/^#pane\/([A-Za-z0-9][A-Za-z0-9-]{7,63})$/.exec(location.hash) || [])[1] || null;
+const host = (() => { try { return PANE && window.parent !== window && window.parent.GENUI ? window.parent.GENUI : null; } catch { return null; } })();
+if (PANE) document.documentElement.classList.add("pane-mode");
 const api = async (path, body) => {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
@@ -20,6 +25,7 @@ const S = {
   gens: new Map(), genBusy: new Set(), genMid: new Set(), genErr: new Map(),
   views: new Map(), liveTail: new Map(),
   sel: null, page: "overview", tab: "flow", search: "",
+  panes: [], paneFocus: 0, popWins: new Map(), narrow: false, railOpen: false,
   drafts: new Map(),       // field drafts and per-session composer drafts
   open: new Set(),         // opened steps and folds in the timeline
   workingSince: new Map(),
@@ -64,7 +70,7 @@ function connect() {
   };
 }
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
-const isOnScreen = (id) => S.page === "session" && S.sel && S.sel.kind === "live" && S.sel.id === id && document.visibilityState === "visible";
+const isOnScreen = (id) => !!PANE || (document.visibilityState === "visible" && ((S.page === "session" && S.sel && S.sel.kind === "live" && S.sel.id === id) || (S.page === "split" && S.panes.includes(id))));
 
 async function refresh(force) {
   const st = await api(`/api/state${force ? "?refresh=1" : ""}`);
@@ -74,7 +80,7 @@ async function refresh(force) {
   // Sessions the server no longer knows (it restarted) are shown as ended, not running.
   for (const [id, l] of S.live) if (!seen.has(id) && l.alive) S.live.set(id, { ...l, alive: false, status: "exited", pendingAsk: null, pendingPermission: null, terminalNeeds: null });
   // A new session left unused (the window closed on it) is discarded; the one on screen stays.
-  for (const l of st.live) if (l.fresh && !(S.page === "session" && S.sel?.id === l.id) && Date.now() - l.createdAt > 15000) discard(l.id);
+  if (!PANE) for (const l of st.live) if (l.fresh && !(S.page === "session" && S.sel?.id === l.id) && !S.panes.includes(l.id) && !(S.popWins.get(l.id) && !S.popWins.get(l.id).closed) && Date.now() - l.createdAt > 15000) discard(l.id);
   // A session that hasn't changed since the window opened has sent no transcript yet: read it once.
   for (const l of st.live) if (l.file && !S.liveTail.has(l.id) && !S.viewFetch.has(l.id)) {
     S.viewFetch.add(l.id);
@@ -119,6 +125,7 @@ function render() {
   morph($("#side"), sideHTML());
   const view = $("#view");
   if (S.page === "overview") morph(view, overviewHTML());
+  else if (S.page === "split") morph(view, splitHTML());
   else if (S.page === "new" || S.page === "plan") morph(view, newGoalHTML());
   else { const ref = current(); if (!ref) { S.page = "overview"; return render(); } morph(view, sessionHTML(ref)); }
   // A session is shown with its rail on the right (the flowchart, or the side chat): beside its
@@ -127,6 +134,9 @@ function render() {
   $(".main").classList.toggle("agent", onSession && S.sel?.kind === "live");
   $(".main").classList.toggle("withrail", onSession);
   $(".main").classList.toggle("norail", onSession && S.sel?.kind === "live" && !railWanted(current()));
+  // Narrow (a pane, a small window): the rail folds into a header button and opens over the terminal.
+  $(".main").classList.toggle("narrow", S.narrow);
+  $(".main").classList.toggle("railopen", S.narrow && S.railOpen);
   renderTerm();
   autosizeAll();
   if (S.page === "session") { syncReply(); drawLines(); }
@@ -183,6 +193,65 @@ function liveRef(l) {
 }
 const curSide = () => { const r = current(); return S.sideOpen && r && S.sideOpen.startsWith(refKey(r) + "|") ? S.sides.get(S.sideOpen) || null : null; };
 
+
+// ---- Split: up to three sessions side by side ---------------------------------------------------
+// Each pane is the app showing one session (#pane/<id>), so each has its own terminal and rail.
+// The main window keeps the list; the sidebar fills the pane you're in; a session is never shown twice.
+const PANES_MAX = 3;
+function savePanes() { try { localStorage.setItem("genui.panes", JSON.stringify({ panes: S.panes, focus: S.paneFocus })); } catch {} }
+function restoreSplit() {
+  let saved = null; try { saved = JSON.parse(localStorage.getItem("genui.panes") || "null"); } catch {}
+  if (!saved || !Array.isArray(saved.panes)) return;
+  S.panes = saved.panes.map((id) => (id && S.live.get(id)?.alive ? id : null)).slice(0, PANES_MAX);
+  if (S.panes.filter(Boolean).length < 1 || S.panes.length < 2) { S.panes = []; savePanes(); return; }
+  S.paneFocus = Math.min(saved.focus || 0, S.panes.length - 1);
+  if (S.page === "overview") { S.page = "split"; render(); }
+}
+function enterSplit(id) {
+  if (S.page === "session") { markSeen(); S.look = null; }
+  const l = S.live.get(id);
+  if (!S.panes.length) S.panes = [id];
+  else if (!S.panes.includes(id)) S.panes[S.paneFocus] = id;
+  if (S.panes.length >= PANES_MAX) { toast(`Up to ${PANES_MAX} side by side`, "Close a pane first.", "", null, 3000); S.page = "split"; render(); return; }
+  S.panes.push(null); S.paneFocus = S.panes.length - 1;
+  S.sel = null; S.page = "split"; S.sideOpen = false; savePanes(); render();
+  if (l && l.fresh) {} // a new session moved into a pane keeps living there
+}
+// Put a session in the pane you're in (or the first empty one); one already shown is just focused.
+function setPane(id, at) {
+  if (S.panes.includes(id)) { S.paneFocus = S.panes.indexOf(id); S.page = "split"; savePanes(); render(); return; }
+  const i = at != null ? at : S.panes[S.paneFocus] == null ? S.paneFocus : S.panes.indexOf(null) >= 0 ? S.panes.indexOf(null) : S.paneFocus;
+  S.panes[i] = id; S.paneFocus = i; S.page = "split"; savePanes(); render();
+}
+function closePaneAt(i) {
+  const id = S.panes[i];
+  const l = id && S.live.get(id); if (l && l.fresh) discard(id);
+  S.panes.splice(i, 1); S.paneFocus = Math.max(0, Math.min(S.paneFocus, S.panes.length - 1));
+  const left = S.panes.filter(Boolean);
+  // One left: back to the normal view of it.
+  if (S.panes.length < 2) { S.panes = []; savePanes(); if (left[0]) { S.page = "overview"; openLive(left[0]); } else go("overview"); return; }
+  savePanes(); render();
+}
+function closePane(id) { const i = S.panes.indexOf(id); if (i >= 0) closePaneAt(i); }
+function focusPane(id) { const i = S.panes.indexOf(id); if (i >= 0 && i !== S.paneFocus) { S.paneFocus = i; savePanes(); render(); } }
+async function newInPane(id, cwd, harness) { const i = S.panes.indexOf(id); if (i >= 0) S.paneFocus = i; await newSession(cwd, harness); }
+// A session in its own window: arrange it with Windows' own snapping. It leaves the main window.
+function popOut(id) {
+  const w = window.open(`/#pane/${id}`, `genui-${id}`, "popup,width=980,height=860");
+  if (!w) { toast("The window was blocked", "", "fail"); return; }
+  S.popWins.set(id, w);
+  if (S.page === "session" && S.sel?.id === id) { markSeen(); S.look = null; S.sel = null; S.page = "overview"; render(); }
+}
+function popPane(id) { const i = S.panes.indexOf(id); popOut(id); if (i >= 0) { S.panes[i] = null; if (S.panes.filter(Boolean).length === 0) closePaneAt(i); else { savePanes(); render(); } } }
+function splitHTML() {
+  return `<div class="panes" style="--n:${S.panes.length}">${S.panes.map((id, i) => {
+    const l = id && S.live.get(id);
+    return `<section class="pane ${i === S.paneFocus ? "on" : ""}" id="pane-${i}" data-i="${i}">${l
+      ? `<iframe data-keep id="pf-${esc(id)}" src="/#pane/${esc(id)}" title="${esc(title(l))}"></iframe>`
+      : `<div class="pane-empty"><p>Pick a session in the sidebar to show it here.</p><div class="pane-act"><button class="btn btn-tint sm" data-act="pane-new" data-i="${i}">${icon("plus", "s14")}New session here</button><button class="btn btn-text sm" data-act="pane-x" data-i="${i}">Close pane</button></div></div>`}</section>`;
+  }).join("")}</div>`;
+}
+
 // ---- Sidebar (3.1) ---------------------------------------------------------------------
 function sideHTML() {
   const live = [...S.live.values()].sort((a, b) => (b.lastActivity || b.createdAt) - (a.lastActivity || a.createdAt));
@@ -197,7 +266,7 @@ function sideHTML() {
   const groups = buckets.map(([name, test]) => { const items = recent.filter((s) => !used.has(s.file) && test(s.mtime)); items.forEach((s) => used.add(s.file)); return [name, items.slice(0, name === "Older" ? 40 : 80)]; }).filter(([, items]) => items.length);
   const liveRow = (l) => {
     const st = liveState(l);
-    const on = S.page === "session" && S.sel?.kind === "live" && S.sel.id === l.id;
+    const on = (S.page === "session" && S.sel?.kind === "live" && S.sel.id === l.id) || (S.page === "split" && S.panes[S.paneFocus] === l.id);
     const ref = liveRef(l), n = needsOf(ref).filter(replyable).length, nw = on ? 0 : newSteps(model(ref)).length;
     return `<button class="srow ${on ? "is-on" : ""}" id="sr-${esc(l.id)}" data-act="open-live" data-id="${esc(l.id)}" title="${esc(l.cwd)}"><span class="sdot ${st}"></span><span class="st">${esc(title(l))}</span><span class="sm">${n ? `<span class="badge">${n}</span>` : nw ? `<span class="newchip">${nw} new</span>` : `<span class="eng">${esc(engShort(l.harness))}</span>${st === "needs" ? "" : esc(nowAgo(l.lastActivity || l.createdAt))}`}</span></button>`;
   };
@@ -211,6 +280,7 @@ function sideHTML() {
   return `
     <button class="srow srow-new" data-act="new-session">${icon("plus")}New session</button>
     <label class="srow srow-search">${icon("search")}<input id="search" data-keep placeholder="Search" aria-label="Search sessions" autocomplete="off"><kbd>Ctrl K</kbd></label>
+    ${S.panes.length >= 2 ? `<button class="srow ${S.page === "split" ? "is-on" : ""}" data-act="split-go">${icon("columns")}<span class="st">Split view</span><span class="sm">${S.panes.filter(Boolean).length}</span></button>` : ""}
     <button class="srow ${S.page === "overview" ? "is-on" : ""}" data-act="go" data-page="overview">${icon("flow")}<span class="st">Orchestrator</span>${needsN ? `<span class="sm"><span class="badge">${needsN}</span></span>` : ""}</button>
     ${groupsLive.filter(([, items]) => items.length).map(([name, items]) => `<div class="sgroup">${name}</div>${items.map(liveRow).join("")}`).join("")}
     ${groups.length ? groups.map(([name, items]) => `<div class="sgroup">${name}</div>${items.map(savedRow).join("")}`).join("") : `<div class="sgroup">Recent</div><div class="sempty">${q ? "Nothing matches." : "No sessions yet"}</div>`}`;
@@ -338,11 +408,20 @@ function agentHTML(ref) {
     <div class="head-t" title="${esc(g ? g.goal : "")}">${hdot ? `<span class="hdot" style="background:${hdot}"></span>` : ""}<span>${esc(name)}</span></div>
     <div class="head-meta">${meta.join(" · ")}</div>
     <div class="head-r">
+      ${S.narrow && railWanted(ref) ? railButton(ref) : ""}
       <button class="ibtn" data-act="new-here" title="New session in this folder, for something unrelated" aria-label="New session in this folder">${icon("plus")}</button>
+      ${PANE ? "" : `<button class="ibtn" data-act="split" title="Split: show another session beside this one" aria-label="Split">${icon("columns")}</button>`}
+      ${host ? "" : `<button class="ibtn" data-act="pop-out" title="Open in its own window" aria-label="Open in its own window">${icon("popout")}</button>`}
+      ${host ? `<button class="ibtn" data-act="pane-pop" title="Open in its own window" aria-label="Open in its own window">${icon("popout")}</button><button class="ibtn" data-act="pane-close" title="Close this pane" aria-label="Close this pane">${icon("x")}</button>` : ""}
       ${l.alive ? `<span class="stopwrap"><button class="ibtn ${S.stopAsk === l.id ? "is-on" : ""}" data-act="stop-ask" title="Stop this session" aria-label="Stop session">${icon("power")}</button>${S.stopAsk === l.id ? `<span class="stop-pop" role="dialog"><span>Stop this session? You can resume it later.</span><span class="stop-act"><button class="btn btn-text sm" data-act="stop-cancel">Cancel</button><button class="btn btn-danger sm" data-act="stop-session">Stop</button></span></span>` : ""}</span>` : ""}
     </div>
   </header>
   ${railWanted(ref) ? `<aside class="railpane" id="railpane" aria-label="${sd ? "Side chat" : "What it needs and its timeline"}">${sd ? sideChatHTML(sd) : railHTML(ref)}</aside>` : ""}`;
+}
+// When narrow, the rail is one button: what it needs, or the timeline.
+function railButton(ref) {
+  const n = needsOf(ref).filter(replyable).length, block = needsOf(ref).some((x) => !replyable(x));
+  return `<button class="btn ${n || block ? "btn-tint" : "btn-neutral"} sm railbtn ${S.railOpen ? "is-on" : ""}" data-act="rail-toggle" aria-expanded="${S.railOpen}">${n ? `<span class="badge">${n}</span>Needs from you` : block ? "Needs you" : `${icon("flow", "s14")}Timeline`}</button>`;
 }
 // The rail appears once there is something to show: a step, something it needs, or a side chat.
 // Until then the terminal has the whole width.
@@ -1059,7 +1138,7 @@ document.addEventListener("click", async (e) => {
   try {
     switch (a) {
       case "go": go(el.dataset.page); break;
-      case "open-live": openLive(el.dataset.id); break;
+      case "open-live": if (S.page === "split" && !e.target.closest(".dash")) setPane(el.dataset.id); else openLive(el.dataset.id); break;
       case "open-saved": openSaved(el.dataset.file, el.dataset.h); break;
       case "regen": ensureGen(true); break;
       case "tools": S.toolsOpen.has(k) ? S.toolsOpen.delete(k) : S.toolsOpen.add(k); render(); break;
@@ -1069,6 +1148,15 @@ document.addEventListener("click", async (e) => {
       case "stop-session": S.stopAsk = null; render(); await api(`/api/sessions/${ref.id}/stop`, {}); break;
       case "new-here": await newSession(ref.cwd, ref.harness); break;
       case "new-session": await newSession(); break;
+      case "rail-toggle": S.railOpen = !S.railOpen; render(); break;
+      // Split: sessions side by side, each a pane. The sidebar fills the pane you're in.
+      case "split": enterSplit(ref.id); break;
+      case "pop-out": popOut(ref.id); break;
+      case "pane-pop": host.popPane(PANE); break;
+      case "pane-close": host.closePane(PANE); break;
+      case "pane-new": S.paneFocus = +el.dataset.i; await newSession(); break;
+      case "pane-x": closePaneAt(+el.dataset.i); break;
+      case "split-go": S.page = "split"; render(); break;
       // Before you send anything, a new session can still move to another folder or agent.
       case "fresh-folder": openPicker(el, ref.cwd); S.picker.fresh = ref.id; break;
       case "fresh-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); await newSession(ref.cwd, av[(av.indexOf(ref.harness) + 1) % av.length], ref.id); break; }
@@ -1185,7 +1273,7 @@ function awayFromWindow(on) {
   if (gone > 2 * 60000 && S.look) startLook();
   S.blurAt = 0; schedule();
 }
-window.addEventListener("blur", () => awayFromWindow(true));
+window.addEventListener("blur", () => setTimeout(() => { if (document.activeElement && document.activeElement.tagName === "IFRAME") return; awayFromWindow(true); }, 0));
 window.addEventListener("focus", () => awayFromWindow(false));
 window.addEventListener("resize", () => drawLines());
 document.addEventListener("visibilitychange", () => awayFromWindow(document.visibilityState !== "visible"));
@@ -1193,6 +1281,7 @@ document.addEventListener("visibilitychange", () => awayFromWindow(document.visi
 
 // ---- Actions ---------------------------------------------------------------------
 function go(page) {
+  if (host && page !== "session") { host.closePane(PANE); return; }
   // A new session starts in your most recent project unless you pick another.
   if ((page === "new" || page === "plan") && !S.ng.cwd) S.ng.cwd = recentFolders()[0] || "";
   if (S.page === "session" && page !== "session") leaveSession();
@@ -1203,6 +1292,10 @@ function go(page) {
 function askNotify() { if (!S.notifAsked && "Notification" in window && Notification.permission === "default") { S.notifAsked = true; setTimeout(() => Notification.requestPermission().catch(() => {}), 1500); } }
 function openLive(id) {
   if (S.page === "session" && S.sel?.id === id) return;
+  if (host && id !== PANE) { host.setPane(id); return; }
+  // A session already in its own window is brought to the front, never shown twice.
+  const w = S.popWins.get(id); if (!PANE && w && !w.closed) { w.focus(); return; }
+  if (!PANE && S.panes.includes(id)) { S.paneFocus = S.panes.indexOf(id); S.page = "split"; render(); return; }
   if (S.page === "session") leaveSession();
   S.armed = null; S.page = "session"; S.sel = { kind: "live", id }; S.sideOpen = false; S.forceBottom = true; startLook(); render(); ensureGen();
 }
@@ -1248,6 +1341,7 @@ async function planIt() {
 // New session: the real terminal at once, in your most recent project (or the one given). You type
 // your first message straight into it. Left without sending anything, it is discarded.
 async function newSession(cwd, harness, replace) {
+  if (host) return host.newInPane(PANE, cwd || (current() || {}).cwd, harness || (current() || {}).harness);
   cwd = cwd || S.ng.cwd || recentFolders()[0]; harness = harness || S.ng.harness || "claude";
   if (!cwd) { go("new"); return; }
   S.ng.cwd = cwd; S.ng.harness = harness;
@@ -1257,6 +1351,7 @@ async function newSession(cwd, harness, replace) {
     const s = await api("/api/sessions", { harness, cwd });
     S.live.set(s.id, s);
     if (replace && S.sel && S.sel.id === replace) { S.sel = null; S.page = "overview"; S.look = null; discard(replace); }
+    if (S.page === "split") { setPane(s.id); askNotify(); return; }
     openLive(s.id); askNotify();
   });
 }
@@ -1412,7 +1507,8 @@ function icon(n, cls = "") {
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', choice: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     enter: '<path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
-    turn: '<path d="M5 20v-6a5 5 0 0 1 5-5h9"/><path d="m15 5 4 4-4 4"/>', away: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    turn: '<path d="M5 20v-6a5 5 0 0 1 5-5h9"/><path d="m15 5 4 4-4 4"/>', columns: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>',
+    popout: '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/>', away: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   }[n] || "";
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 }
@@ -1420,6 +1516,14 @@ function icon(n, cls = "") {
 // Tick live timers (Working Ns, Planning Ns) once a second while something is running on screen.
 setInterval(() => { const r = current(); if (document.visibilityState === "visible" && ((r && r.kind === "live" && r.state === "run") || (S.page === "new" && S.ng.busy))) schedule(); }, 1000);
 connect();
-refresh().catch((e) => toast(e.message, "", "fail"));
+refresh().then(() => {
+  if (PANE) { if (S.live.has(PANE)) openLive(PANE); else { document.body.innerHTML = `<p class="pane-gone">This session isn't running any more.</p>`; } return; }
+  restoreSplit();
+}).catch((e) => toast(e.message, "", "fail"));
+addEventListener("hashchange", () => location.reload());
+// Narrow below 1000 px: the rail folds into the header.
+new ResizeObserver(([e]) => { const n = e.contentRect.width < 1000; if (n !== S.narrow) { S.narrow = n; if (!n) S.railOpen = false; schedule(); } }).observe($(".main"));
+if (PANE) addEventListener("focusin", () => host && host.focusPane(PANE));
+if (PANE) addEventListener("pointerdown", () => host && host.focusPane(PANE), true);
 setInterval(() => { refresh().catch(() => {}); if (document.hasFocus()) { try { localStorage.setItem("genui.lastSeenApp", String(Date.now())); } catch {} } }, 30000);
-window.GENUI = { S, render, openLive, openSaved, go, current };
+window.GENUI = { S, render, openLive, openSaved, go, current, setPane, closePane, popPane, newInPane, focusPane };
