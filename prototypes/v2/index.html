@@ -1,0 +1,877 @@
+<title>GenUI Catch-up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Prototype v2: version 1 of research/BRIEF.md (come back and catch up). Tokens are the app's own (web/app.css, from research/DESIGN.md). */
+:root {
+  color-scheme: light;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --bg-page: #ffffff; --bg-sidebar: #fafafa; --bg-card: #ffffff; --bg-raised: #f5f5f5; --bg-hover: #efefef; --bg-active: #ebebeb; --bg-row-active: #fafafa;
+  --border: rgba(0,0,0,.07); --border-strong: rgba(0,0,0,.10); --divider: #f0f0f0; --track: #f0f0f0;
+  --text-1: #171717; --text-2: #737373; --text-3: #a3a3a3; --text-4: #d4d4d4;
+  --accent: #2f6bea; --accent-dot: #3b82f6; --accent-line: #a1ccf5; --accent-ink: #2b54a8; --accent-tint: #edf2fc; --accent-tint-hover: #e3ebfb; --accent-chip: #f1f6fe; --accent-ring: 0 0 0 3px rgba(47,107,234,.16);
+  --amber-dot: #f0a80d; --amber-ink: #b45309; --amber-tint: #fffbeb; --amber-ring: #f8d9a6; --amber-halo: #fdeccb; --amber-flash: #fcf3ed;
+  --green-dot: #22c55e; --green-ink: #15803d; --green-tint: #f0fdf4; --green-ring: #bbf7d0;
+  --grey-dot: #c0c0c0; --grey-line: #d4d4d4; --grey-chip: #f1f1f1;
+  --shine-1: #8f8f8f; --shine-2: #c8c8c8;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.02), 0 4px 16px -4px rgba(0,0,0,.04);
+  --shadow-pop: 0 8px 24px rgba(0,0,0,.08);
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+  /* The terminal is always dark. */
+  --term-bg: #141414; --term-fg: #d6d6d6; --term-dim: #8a8a8a; --term-faint: #5c5c5c; --term-user: #262626; --term-ok: #6fcf7f; --term-bullet: #e8e8e8; --term-amber: #e9b04a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg-page:#0f0f0f; --bg-sidebar:#121212; --bg-card:#191919; --bg-raised:#252525; --bg-hover:#2a2a2a; --bg-active:#2e2e2e; --bg-row-active:#1f1f1f;
+    --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.11); --divider:#282828; --track:#262626;
+    --text-1:#f0f0f0; --text-2:#a3a3a3; --text-3:#6e6e6e; --text-4:#3f3f3f;
+    --accent:#2f5cdd; --accent-dot:#4880e8; --accent-line:#435379; --accent-ink:#b6c9f5; --accent-tint:#1e232e; --accent-tint-hover:#252c3a; --accent-chip:#162333; --accent-ring:0 0 0 3px rgba(72,128,232,.30);
+    --amber-dot:#e59f1c; --amber-ink:#e9b04a; --amber-tint:#2a2112; --amber-ring:#5a4220; --amber-halo:#3a2a0f; --amber-flash:#2a211b;
+    --green-dot:#50e359; --green-ink:#5fd16a; --green-tint:#132815; --green-ring:#1f4a26;
+    --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525; --shine-1:#7d7d7d; --shine-2:#6e6e6e;
+    --shadow-card: inset 0 1px 0 rgba(255,255,255,.03); --shadow-pop: 0 8px 24px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-page:#0f0f0f; --bg-sidebar:#121212; --bg-card:#191919; --bg-raised:#252525; --bg-hover:#2a2a2a; --bg-active:#2e2e2e; --bg-row-active:#1f1f1f;
+  --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.11); --divider:#282828; --track:#262626;
+  --text-1:#f0f0f0; --text-2:#a3a3a3; --text-3:#6e6e6e; --text-4:#3f3f3f;
+  --accent:#2f5cdd; --accent-dot:#4880e8; --accent-line:#435379; --accent-ink:#b6c9f5; --accent-tint:#1e232e; --accent-tint-hover:#252c3a; --accent-chip:#162333; --accent-ring:0 0 0 3px rgba(72,128,232,.30);
+  --amber-dot:#e59f1c; --amber-ink:#e9b04a; --amber-tint:#2a2112; --amber-ring:#5a4220; --amber-halo:#3a2a0f; --amber-flash:#2a211b;
+  --green-dot:#50e359; --green-ink:#5fd16a; --green-tint:#132815; --green-ring:#1f4a26;
+  --grey-dot:#5e5e5e; --grey-line:#3a3a3a; --grey-chip:#252525; --shine-1:#7d7d7d; --shine-2:#6e6e6e;
+  --shadow-card: inset 0 1px 0 rgba(255,255,255,.03); --shadow-pop: 0 8px 24px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg-page); color: var(--text-1); font: 400 15px/24px var(--font-sans); -webkit-font-smoothing: antialiased; overflow: hidden; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+textarea, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono, code { font-family: var(--font-mono); font-variant-ligatures: none; }
+.num { font-variant-numeric: tabular-nums; }
+.t2 { color: var(--text-2); } .t3 { color: var(--text-3); }
+.ic { width: 16px; height: 16px; flex: none; }
+.ic.s12 { width: 12px; height: 12px; } .ic.s14 { width: 14px; height: 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@keyframes enter { from { opacity: 0; filter: blur(5px); transform: translateY(4px); } to { opacity: 1; filter: none; transform: none; } }
+@keyframes flash { from { background: var(--accent-tint); } to { background: transparent; } }
+.enter { animation: enter 220ms var(--ease-out) both; }
+.flash { animation: flash 1.6s var(--ease-out); }
+.shine { background: linear-gradient(90deg, currentColor 0 40%, var(--shine-1) 50%, currentColor 60% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---- Shell ---- */
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); height: 100%; }
+.side { background: var(--bg-sidebar); border-right: 1px solid var(--divider); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow: auto; min-height: 0; }
+.logo { display: flex; align-items: center; gap: 8px; padding: 4px 8px 12px; font-weight: 600; font-size: 15px; }
+.tag { font-size: 12px; font-weight: 500; color: var(--text-2); background: var(--grey-chip); border-radius: 999px; padding: 0 8px; line-height: 20px; }
+.srow { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; width: 100%; font-size: 14px; }
+.srow:hover { background: var(--bg-hover); }
+.srow.on { background: var(--bg-active); font-weight: 500; }
+.srow .st { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow .ic { color: var(--text-2); }
+.sgroup { font-size: 13px; color: var(--text-3); padding: 16px 8px 4px; }
+.sfoot { margin-top: auto; padding: 12px 8px 4px; font-size: 13px; line-height: 18px; color: var(--text-3); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; position: relative; }
+.dot.working { background: var(--accent-dot); }
+.dot.working::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--text-2); border-right-color: var(--text-2); animation: spin .8s linear infinite; }
+.dot.needs { background: var(--amber-dot); }
+.dot.turn { background: var(--grey-dot); }
+.badge { min-width: 18px; height: 18px; border-radius: 999px; border: 1px solid var(--amber-ring); background: var(--amber-tint); color: var(--amber-ink); font-size: 12px; font-weight: 500; line-height: 16px; text-align: center; padding: 0 5px; flex: none; font-variant-numeric: tabular-nums; }
+.newchip { height: 20px; border-radius: 999px; background: var(--accent-chip); color: var(--accent-ink); font-size: 12px; font-weight: 500; line-height: 20px; padding: 0 8px; white-space: nowrap; }
+.main { min-width: 0; min-height: 0; overflow: auto; position: relative; }
+
+/* ---- Buttons ---- */
+.btn { height: 34px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background 150ms; }
+.btn.sm { height: 28px; padding: 0 12px; font-size: 13px; }
+.btn-tint { background: var(--accent-tint); color: var(--accent-ink); }
+.btn-tint:hover { background: var(--accent-tint-hover); }
+.btn-neutral { background: var(--bg-raised); color: var(--text-1); }
+.btn-neutral:hover { background: var(--bg-hover); }
+.btn-text { color: var(--text-2); padding: 0 8px; }
+.btn-text:hover { color: var(--text-1); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.ibtn { width: 32px; height: 32px; border-radius: 8px; display: inline-grid; place-items: center; color: var(--text-2); }
+.ibtn:hover { background: var(--bg-hover); color: var(--text-1); }
+.lnk { color: var(--text-2); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; border-bottom: 1px dotted var(--text-4); line-height: 18px; }
+.lnk:hover { color: var(--text-1); border-bottom-color: var(--text-2); }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--track); border-top-color: var(--text-2); animation: spin .8s linear infinite; flex: none; }
+
+/* ---- Dashboard ---- */
+.dash { max-width: 1104px; margin: 0 auto; padding-block: 28px 64px; padding-inline: 32px; display: flex; flex-direction: column; gap: 16px; }
+.dhead { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.dhead h1 { font-size: 16px; line-height: 24px; font-weight: 600; margin: 0; }
+.back-line { font-size: 15px; color: var(--text-2); margin: 2px 0 0; }
+.back-line b { color: var(--text-1); font-weight: 500; }
+.sumline { font-size: 15px; color: var(--text-2); }
+.sumline b { color: var(--text-1); font-weight: 500; }
+.sumline b.am { color: var(--amber-ink); }
+.seg { margin-left: auto; display: inline-flex; background: var(--bg-raised); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { height: 28px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.seg button.on { background: var(--bg-card); color: var(--text-1); box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px var(--border); }
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-card); }
+.rows { overflow: hidden; }
+.arow { cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) 236px 132px; column-gap: 20px; padding: 14px 16px; border-top: 1px solid var(--divider); width: 100%; align-items: start; transition: background 150ms; }
+.arow:first-child { border-top: 0; }
+.arow:hover { background: var(--bg-row-active); }
+.ar-t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ar-t .tt { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-sub { font-size: 13px; line-height: 18px; color: var(--text-2); margin: 2px 0 8px 16px; }
+.ar-l { font-size: 14px; line-height: 20px; margin-left: 16px; display: flex; gap: 8px; }
+.ar-l + .ar-l { margin-top: 2px; }
+.ar-l .k { flex: none; width: 46px; color: var(--text-3); }
+.ar-l .v { color: var(--text-2); min-width: 0; }
+.ar-l.need .k { color: var(--amber-ink); }
+.ar-l.need .v { color: var(--text-1); }
+.ar-l.now .v { color: var(--text-1); }
+.ar-flow { padding-top: 2px; }
+.ar-flow svg { display: block; overflow: visible; }
+.ar-st { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.stl { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.stl .d { width: 6px; height: 6px; border-radius: 50%; }
+.stl.needs { color: var(--amber-ink); } .stl.needs .d { background: var(--amber-dot); }
+.stl.working { color: var(--accent-ink); } .stl.working .d { background: var(--accent-dot); }
+.stl.turn { color: var(--text-2); } .stl.turn .d { background: var(--grey-dot); }
+.ar-meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-3); }
+.mf-done { fill: var(--grey-dot); } .mf-new { fill: var(--text-2); } .mf-amber { fill: var(--amber-dot); }
+.mf-line { stroke: var(--grey-line); stroke-width: 1.5; fill: none; }
+.mf-line.cur { stroke: var(--accent-line); }
+.mf-line.dash { stroke-dasharray: 3 3; }
+.mf-look { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 2 2; }
+.mf-more { fill: var(--text-3); font: 500 11px var(--font-sans); }
+.mf-halo { fill: var(--amber-halo); } .mf-disc { fill: var(--amber-dot); } .mf-mark { stroke: #fff; stroke-width: 2; stroke-linecap: round; }
+.mf-turn { fill: var(--text-3); } .mf-work { fill: var(--accent-dot); } .mf-orbit { stroke: var(--text-1); stroke-width: 1.5; fill: none; stroke-linecap: round; }
+.dlegend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); padding: 0 4px; }
+.dlegend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg-look { width: 0; height: 12px; border-left: 1px dashed var(--text-3); }
+
+/* All needs */
+.nlist { overflow: hidden; }
+.ngroup { border-top: 1px solid var(--divider); }
+.ngroup:first-child { border-top: 0; }
+.ng-h { display: flex; align-items: center; gap: 8px; padding: 12px 16px 4px; font-size: 14px; font-weight: 500; }
+.ng-h .t2 { font-weight: 400; font-size: 13px; }
+.nitem { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 16px; padding: 8px 16px 8px 32px; width: 100%; align-items: center; }
+.nitem:hover { background: var(--bg-row-active); }
+.nitem .q { font-weight: 500; }
+.nitem .c { font-size: 13px; line-height: 18px; color: var(--text-2); grid-column: 1; }
+.nitem .w { font-size: 13px; color: var(--text-3); white-space: nowrap; grid-row: 1 / span 2; grid-column: 2; display: flex; align-items: center; gap: 8px; }
+.ng-foot { padding: 4px 16px 14px 32px; }
+.old { color: var(--amber-ink); }
+
+/* ---- Session ---- */
+.sess { display: grid; grid-template-rows: 48px minmax(0, 1fr); height: 100%; }
+.shead { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 8px; border-bottom: 1px solid var(--divider); min-width: 0; }
+.shead .tt { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.shead .meta { font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.sbody { display: grid; grid-template-columns: minmax(0, 1fr) 460px; min-height: 0; }
+
+.term { background: var(--term-bg); color: var(--term-fg); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tstrip { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 13px; color: var(--term-dim); border-bottom: 1px solid #222; }
+.tstrip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--term-amber); }
+.tstrip .d.working { background: #4880e8; } .tstrip .d.turn { background: #5e5e5e; }
+.tscroll { flex: 1; overflow: auto; padding: 14px 16px 8px; font: 13px/20px var(--font-mono); font-variant-ligatures: none; min-height: 0; }
+.tl { white-space: pre-wrap; word-break: break-word; }
+.tl.u { background: var(--term-user); color: #f2f2f2; padding: 2px 8px; margin: 10px 0 6px; border-radius: 3px; }
+.tl.b { color: var(--term-fg); margin-top: 6px; }
+.tl.b::first-letter { color: var(--term-bullet); }
+.tl.r { color: var(--term-dim); padding-left: 2ch; }
+.tl.ok { color: var(--term-ok); padding-left: 2ch; }
+.tl.m { color: #ededed; margin-top: 6px; }
+.tl.am { color: var(--term-amber); }
+.tl.ind { padding-left: 2ch; margin-top: 0; }
+.tl.hl { animation: termhl 2s var(--ease-out); }
+@keyframes termhl { from { background: #2b3348; } to { background: transparent; } }
+.tl.work { color: #d9895c; margin-top: 8px; }
+.tbox { margin: 10px 16px 0; border: 1px solid #555; border-radius: 6px; padding: 4px 10px; font: 13px/20px var(--font-mono); color: var(--term-dim); flex: none; }
+.thint { padding: 4px 26px 12px; font: 12px/18px var(--font-mono); color: var(--term-faint); flex: none; }
+
+.rail { border-left: 1px solid var(--divider); overflow: auto; min-height: 0; padding: 16px 16px 48px; display: flex; flex-direction: column; gap: 20px; }
+.rsec-h { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.rsec-h .t2, .rsec-h .t3 { font-weight: 400; font-size: 13px; }
+.rsec-h .sp { flex: 1; }
+.away { padding: 12px 14px; border-radius: 12px; background: var(--accent-chip); font-size: 14px; line-height: 21px; }
+.away .h { display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--accent-ink); }
+.away p { margin: 4px 0 0; color: var(--text-1); }
+
+/* Needs from you */
+.needs { display: flex; flex-direction: column; gap: 10px; }
+.need { padding: 14px 14px 12px; }
+.need.focus { box-shadow: 0 0 0 2px var(--amber-ring), var(--shadow-card); }
+.nh { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); line-height: 18px; }
+.nh .sp { flex: 1; }
+.nq { font-weight: 600; margin-top: 6px; }
+.nc { font-size: 14px; line-height: 20px; color: var(--text-2); margin-top: 2px; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.opt { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 16px; background: var(--bg-raised); font-size: 14px; line-height: 20px; font-weight: 500; transition: background 150ms; max-width: 100%; }
+.opt:hover { background: var(--bg-hover); }
+.opt .q2 { margin-left: 2px; font-weight: 400; color: var(--text-2); font-size: 13px; }
+.opt.on { background: var(--accent-chip); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-dot) 60%, transparent); }
+.opt.on .q2 { color: var(--accent-ink); }
+.opt.else { color: var(--text-2); font-weight: 400; }
+.opt .ck { margin-left: 2px; display: inline-flex; color: var(--accent-ink); }
+.elsein { width: 100%; min-height: 40px; border-radius: 10px; border: 1px solid var(--accent); box-shadow: var(--accent-ring); background: var(--bg-card); padding: 8px 12px; font-size: 14px; line-height: 20px; outline: none; resize: none; display: block; }
+.nfoot { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.nfoot .sp { flex: 1; }
+.side-draft { margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-strong); font-size: 14px; line-height: 21px; }
+.side-draft .h { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.side-draft .acts { display: flex; gap: 6px; margin-top: 8px; }
+.need.done { padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+.need.done .q { color: var(--text-2); font-size: 14px; flex: 1; min-width: 0; line-height: 20px; }
+.need.done .a { font-size: 14px; color: var(--text-1); text-align: right; max-width: 48%; line-height: 20px; }
+.gck { width: 18px; height: 18px; border-radius: 50%; background: var(--green-tint); border: 1px solid var(--green-ring); color: var(--green-ink); display: grid; place-items: center; flex: none; }
+
+.reply { padding: 14px; }
+.reply .h { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+.reply .h .sp { flex: 1; }
+.reply textarea { width: 100%; min-height: 112px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-card); padding: 10px 12px; font-size: 14px; line-height: 21px; resize: vertical; outline: none; display: block; }
+.reply textarea:focus { border-color: var(--accent); box-shadow: var(--accent-ring); }
+.reply .f { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.reply .f .note { flex: 1; font-size: 13px; line-height: 18px; color: var(--text-3); }
+.allclear { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); padding: 12px 14px; }
+
+/* Flowchart (branches) */
+.tree { position: relative; }
+.tree svg.lines { position: absolute; left: 0; top: 0; width: 48px; pointer-events: none; overflow: visible; }
+.tree svg.lines path { fill: none; stroke-width: 1.5; }
+.ln-grey { stroke: var(--grey-line); } .ln-cur { stroke: var(--accent-line); } .ln-dash { stroke-dasharray: 3 3; }
+.trow { position: relative; min-height: 32px; display: flex; align-items: center; gap: 8px; padding-left: 48px; border-radius: 8px; }
+.trow.goal { min-height: 36px; }
+.trow.step { cursor: pointer; }
+.trow.step:hover { background: var(--bg-row-active); }
+.trow.sel { background: var(--bg-row-active); }
+.trow .lab { flex: 1; min-width: 0; font-size: 15px; line-height: 20px; padding: 6px 0; }
+.trow.goal .lab { font-weight: 600; }
+.trow.goal .lab .br { color: var(--text-3); margin-right: 6px; vertical-align: -2px; }
+.trow.amber .lab { color: var(--amber-ink); }
+.trow .rm { font-size: 13px; color: var(--text-3); white-space: nowrap; padding-right: 8px; display: flex; align-items: center; gap: 8px; }
+.trow .rm .nw { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-dot); }
+.trow .chev { color: var(--text-3); transition: transform 150ms; }
+.trow.sel .chev { transform: rotate(90deg); }
+.nd { position: absolute; top: 50%; transform: translate(-50%, -50%); border-radius: 50%; }
+.nd.done { width: 8px; height: 8px; background: var(--grey-dot); }
+.nd.ask-done { width: 8px; height: 8px; background: var(--grey-dot); }
+.nd.amber { width: 8px; height: 8px; background: var(--amber-dot); }
+.nd.goal { width: 11px; height: 11px; border: 1.5px solid var(--text-2); background: var(--bg-card); }
+.nd.goal.cur { border-color: var(--accent-dot); }
+.nd.needs { width: 14px; height: 14px; background: var(--amber-dot); box-shadow: 0 0 0 4px var(--amber-halo); display: grid; place-items: center; color: #fff; }
+.nd.turn { width: 12px; height: 12px; background: var(--text-3); }
+.nd.working { width: 8px; height: 8px; background: var(--accent-dot); }
+.nd.working::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px solid transparent; border-top-color: var(--text-1); border-right-color: var(--text-1); animation: spin .8s linear infinite; }
+.awayrow { display: flex; align-items: center; gap: 8px; padding: 6px 0 6px 48px; font-size: 13px; color: var(--accent-ink); font-weight: 500; }
+.awayrow::after { content: ""; flex: 1; border-top: 1px dashed var(--accent-line); }
+.tdetail { margin: 2px 0 8px 48px; padding: 12px 0 4px; border-top: 1px solid var(--divider); font-size: 14px; line-height: 21px; display: flex; flex-direction: column; gap: 10px; }
+.tdetail p { margin: 0; }
+.dk { font-size: 13px; color: var(--text-3); margin-bottom: 4px; line-height: 18px; }
+.refs { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.ref { font: 500 12.5px/20px var(--font-mono); background: var(--grey-chip); border-radius: 5px; padding: 0 6px; color: var(--text-1); }
+.diff { font: 12.5px/20px var(--font-mono); color: var(--text-2); }
+.refline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.said { padding-left: 12px; border-left: 2px solid var(--divider); color: var(--text-1); }
+.ans { display: flex; align-items: center; gap: 8px; }
+.dacts { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.sides .srow2 { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); height: 30px; }
+.sides .srow2 .ic { color: var(--text-3); }
+
+/* Toast */
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--border); box-shadow: var(--shadow-pop); border-radius: 12px; padding: 10px 14px; font-size: 14px; display: flex; align-items: center; gap: 8px; z-index: 50; max-width: calc(100% - 32px); }
+
+/* ---- Narrow ---- */
+@media (max-width: 1100px) { .sbody { grid-template-columns: minmax(0, 1fr) 400px; } }
+@media (max-width: 960px) { .app { grid-template-columns: minmax(0, 1fr); } .side { display: none; } }
+@media (max-width: 860px) {
+  body { overflow: auto; }
+  .app, .sess { height: auto; min-height: 100%; }
+  .main { overflow: visible; }
+  .sbody { grid-template-columns: minmax(0, 1fr); }
+  .term { height: 420px; }
+  .rail { border-left: 0; overflow: visible; }
+  .arow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 8px; }
+  .ar-flow { grid-column: 1 / -1; grid-row: 2; margin-left: 16px; }
+  .ar-st { grid-column: 2; grid-row: 1; }
+  .dash { padding-inline: 16px; }
+  .seg { margin-left: 0; }
+}
+@media (max-width: 480px) { .need.done { flex-wrap: wrap; } .need.done .a { max-width: 100%; text-align: left; } .shead .meta { display: none; } }
+</style>
+
+<div class="app">
+  <aside class="side" id="side" aria-label="Sessions"></aside>
+  <main class="main" id="main"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+// ---- Sample data: 7 fictional agents. The owner looked last at 1:52pm and it's now 4:06pm. ----
+const LEFT = "1:52pm", AWAY = "2h 14m";
+
+const AGENTS = [
+  { id: "pricing", title: "Redesign the pricing page with 3 plans", repo: "northwind-site", harness: "Claude Code", state: "needs", age: "4m",
+    did: "Rewrote 6 FAQ answers for the new plans and checked the build.",
+    goals: [
+      { id: "g0", label: "Redesign the pricing page with 3 plans", by: "You · 10:20am", steps: [
+        { id: "s1", l: "Read 9 files", t: "10:21am", sum: "Read the pricing page, the plan config and the shared styles to see how prices reach the page.",
+          files: [["app/pricing/page.tsx"], ["components/PricingTable.tsx"], ["lib/plans.ts"], ["styles/tokens.css"], ["+5 more"]],
+          said: "The prices live in lib/plans.ts, so the table and checkout already read the same numbers. I'll change them there.", term: ["Read(app/pricing/page.tsx)", "Read 9 files"] },
+        { id: "s2", l: "Asked which plan to highlight", t: "10:24am", sum: "Asked which plan should be the default choice.",
+          ask: { q: "Which plan should stand out?", a: "Pro, with a “Most popular” tag", by: "You · 10:31am" } },
+        { id: "s3", l: "Edit PricingTable.tsx ×4", t: "10:40am", sum: "Rebuilt the table as three cards, with Pro raised and tagged “Most popular”.",
+          files: [["components/PricingTable.tsx", "+182 −64"]], said: "Pro is the middle card with the tag. On phones the three cards stack with Pro first." },
+        { id: "s4", l: "Edit lib/plans.ts", t: "10:52am", sum: "Set the three plans: Starter $19, Pro $49 and Business $129 a month.", files: [["lib/plans.ts", "+24 −31"]] },
+        { id: "s5", l: "Run npm test", t: "11:02am", sum: "All tests passed after 2 price snapshots were updated.", cmds: [["npm test", "42 passed · 21s"]] },
+        { id: "s6", l: "Start the preview", t: "11:05am", sum: "Started the dev server so you can look at the page.", cmds: [["npm run dev", "localhost:3000"]], said: "The new page is up at localhost:3000/pricing." },
+      ] },
+      { id: "g1", label: "also add a monthly / yearly toggle", by: "You · 12:40pm", steps: [
+        { id: "s7", l: "Read Toggle.tsx", t: "12:41pm", sum: "Checked the site's existing toggle so the switch matches it.", files: [["components/ui/Toggle.tsx"]] },
+        { id: "s8", l: "Edit PricingTable.tsx ×3", t: "12:58pm", sum: "Added the Monthly / Yearly switch. Yearly prices show the saving under each price.", files: [["components/PricingTable.tsx", "+57 −12"]] },
+        { id: "s9", l: "Asked what yearly discount to show", t: "1:15pm", sum: "Asked about the yearly discount, then carried on with 20% off in the meantime.",
+          ask: { q: "What yearly discount should the toggle show?", needs: ["n1"] }, said: "I've used 20% off for now. Tell me if it should be different." },
+        { id: "s10", l: "Run npm test", t: "1:21pm", sum: "All tests passed, including 2 new ones for the toggle.", cmds: [["npm test", "44 passed · 23s"]] },
+      ] },
+      { id: "g2", label: "make the FAQ match the new plans", by: "You · 1:48pm", steps: [
+        { id: "s11", l: "Read content/faq.mdx", t: "1:49pm", sum: "Found 9 FAQ answers that still name the old plans or prices.", files: [["content/faq.mdx"]] },
+        { id: "s12", l: "Edit content/faq.mdx ×3", t: "1:58pm", new: true, sum: "Rewrote 6 answers so plan names and prices match Starter, Pro and Business.",
+          files: [["content/faq.mdx", "+18 −22"]], term: ["Update(content/faq.mdx)", "Updated content/faq.mdx with 18 additions and 22 removals"] },
+        { id: "s13", l: "Run npm run build", t: "2:03pm", new: true, sum: "The site builds cleanly with the new FAQ.", cmds: [["npm run build", "compiled · 8.4s"]] },
+        { id: "s14", l: "Asks 2 questions", t: "2:04pm", new: true, current: true, sum: "Finished the FAQ and stopped to ask about the Enterprise entries and the preview branch.",
+          ask: { q: "Remove the Enterprise FAQ entries? Push to the preview branch?", needs: ["n2", "n3"] },
+          said: "The FAQ now matches the three plans. Two things before I go on." },
+      ] },
+    ],
+    needs: [
+      { id: "n1", step: "s9", key: "Yearly discount", eyebrow: "Discount", when: "1:15pm", open: "2h 51m", old: true,
+        q: "What yearly discount should the toggle show?", ctx: "Claude Code used 20% off for now and carried on.",
+        opts: [["20% off", "as built"], ["2 months free"], ["15% off"]],
+        side: { text: "20% off makes Pro $470.40 a year. 2 months free makes it $490: a rounder price, and it's how most pricing pages say it. I'd pick 2 months free.", pick: "2 months free" } },
+      { id: "n2", step: "s14", key: "Enterprise FAQ entries", eyebrow: "FAQ", when: "2:04pm", open: "2h 2m",
+        q: "Remove the 3 Enterprise FAQ entries, or rewrite them under Business?", ctx: "They cover SSO, invoicing and the SLA. Enterprise isn't on the new page.",
+        opts: [["Remove them"], ["Rewrite under Business"]],
+        side: { text: "lib/plans.ts already lists SSO and invoicing under Business. Only the SLA has no plan. I'd rewrite those 2 under Business and remove the SLA entry.", pick: "Rewrite SSO and invoicing under Business; remove the SLA entry" } },
+      { id: "n3", step: "s14", key: "Preview branch", eyebrow: "Branch", when: "2:04pm", open: "2h 2m",
+        q: "Should I push this to the preview branch?", ctx: "You'd get a link you can share.",
+        opts: [["Yes, push it"], ["Not yet"]],
+        side: { text: "The diff only touches the pricing page, the plan config and the FAQ. Nothing private goes out. Safe to push.", pick: "Yes, push it" } },
+    ],
+    tail: ["The FAQ now matches the three plans. Two things before I go on:", "", "1. The FAQ still has 3 Enterprise entries (SSO, invoicing, SLA). Enterprise", "   isn't on the new page. Remove them, or rewrite them under Business?", "2. Should I push this to the preview branch so you can share it?"],
+  },
+
+  { id: "linkedin", title: "Write this week's 3 LinkedIn posts", repo: "marketing", harness: "Claude Code", state: "needs", age: "38m",
+    did: "Drafted all 3 posts in your voice; Thursday's is new since you looked.",
+    goals: [
+      { id: "g0", label: "Write this week's 3 LinkedIn posts", by: "You · 9:05am", steps: [
+        { id: "s1", l: "Read voice.md and 12 past posts", t: "9:06am", sum: "Read your voice guide and October's posts to match the tone.", files: [["ops/voice.md"], ["posts/2026-10/"]] },
+        { id: "s2", l: "Draft Tuesday's post", t: "9:20am", sum: "A short story about shipping 40 releases in October.", files: [["posts/2026-11/tue.md", "+31"]] },
+        { id: "s3", l: "Draft Wednesday's post", t: "1:30pm", sum: "A how-to on writing a pricing page people can read in 10 seconds.", files: [["posts/2026-11/wed.md", "+28"]] },
+        { id: "s4", l: "Draft Thursday's post", t: "3:24pm", new: true, sum: "A customer story about the smallest team on Northwind.", files: [["posts/2026-11/thu.md", "+26"]] },
+        { id: "s5", l: "Asks which opening line to use", t: "3:28pm", new: true, current: true, sum: "Wrote 3 opening lines for Tuesday's post and asked you to pick.", ask: { q: "Which opening line for Tuesday's post?", needs: ["n1"] } },
+      ] },
+    ],
+    needs: [
+      { id: "n1", step: "s5", key: "Tuesday's opening line", eyebrow: "Post", when: "3:28pm", open: "38m",
+        q: "Which opening line should Tuesday's post use?", ctx: "All three are under 12 words.",
+        opts: [["“We shipped 40 releases in October.”"], ["“Most of our releases are boring. Good.”"], ["“Small releases, every day, for a month.”"]],
+        side: { text: "Your best October posts opened with a number. I'd use the first one.", pick: "“We shipped 40 releases in October.”" } },
+    ],
+    tail: ["All 3 drafts are in posts/2026-11/. Which opening line for Tuesday?", "", "1. “We shipped 40 releases in October.”", "2. “Most of our releases are boring. Good.”", "3. “Small releases, every day, for a month.”"],
+  },
+
+  { id: "onboarding", title: "Write a 5-email onboarding sequence", repo: "lifecycle-emails", harness: "Codex", state: "needs", age: "12m",
+    did: "Wrote emails 4 and 5 and cut every email under 120 words.",
+    goals: [
+      { id: "g0", label: "Write a 5-email onboarding sequence for new trials", by: "You · 11:30am", steps: [
+        { id: "s1", l: "Read the trial events schema", t: "11:31am", sum: "Found the events each email can be triggered by.", files: [["events/trial.json"]] },
+        { id: "s2", l: "Write emails 1–3", t: "12:10pm", sum: "Welcome, first project and invite-a-teammate emails.", files: [["emails/01-welcome.mjml", "+64"], ["emails/02-first-project.mjml", "+58"], ["emails/03-invite.mjml", "+51"]] },
+      ] },
+      { id: "g1", label: "keep each email under 120 words", by: "You · 1:10pm", steps: [
+        { id: "s3", l: "Shorten emails 1–3", t: "1:24pm", sum: "Cut the three emails to 96, 110 and 88 words.", files: [["emails/01-welcome.mjml", "+12 −30"], ["emails/02-first-project.mjml", "+9 −22"], ["emails/03-invite.mjml", "+7 −19"]] },
+        { id: "s4", l: "Write emails 4 and 5", t: "3:40pm", new: true, sum: "Trial-ending reminder and the upgrade email, both under 120 words.", files: [["emails/04-ending.mjml", "+49"], ["emails/05-upgrade.mjml", "+53"]] },
+        { id: "s5", l: "Asks to send a test email", t: "3:54pm", new: true, current: true, sum: "Wants to send all 5 to your inbox so you can check them on your phone.", ask: { q: "Send all 5 emails to your inbox as a test?", needs: ["n1"] } },
+      ] },
+    ],
+    needs: [
+      { id: "n1", step: "s5", key: "Test emails", eyebrow: "Approval", when: "3:54pm", open: "12m",
+        q: "Send all 5 emails to your inbox as a test?", ctx: "Codex wants to run node scripts/send-test.mjs --to you.",
+        opts: [["Yes, send them"], ["Not yet"]],
+        side: { text: "The script only sends to the address in .env (yours). It doesn't touch the customer list. Safe to allow.", pick: "Yes, send them" } },
+    ],
+    tail: ["Emails 4 and 5 are done. I'd like to send all 5 to you as a test.", "", "  $ node scripts/send-test.mjs --to you", "", "Allow? (y/n)"],
+  },
+
+  { id: "checkout", title: "Fix the 500 errors on checkout", repo: "shop-app", harness: "Claude Code", state: "turn", age: "1h",
+    did: "Fixed the guest-checkout crash and added 3 tests; all 61 pass.", next: "It's ready to deploy when you are.",
+    goals: [
+      { id: "g0", label: "Fix the 500 errors on checkout", by: "You · 8:40am", steps: [
+        { id: "s1", l: "Read the error logs", t: "8:41am", sum: "212 errors since Monday, all on guest checkout.", cmds: [["tail -n 400 logs/api.log", "212 matches"]] },
+        { id: "s2", l: "Found the cause", t: "8:52am", sum: "Guest orders have no saved address, so the tax lookup reads a null.", said: "Guest checkout skips the address step, and calcTax() reads order.address.country. That's the crash." },
+        { id: "s3", l: "Edit api/checkout.ts", t: "9:05am", sum: "Guest orders now fall back to the billing address.", files: [["api/checkout.ts", "+14 −3"]] },
+        { id: "s4", l: "Add 3 tests", t: "2:40pm", new: true, sum: "Tests for guest checkout with and without a billing country.", files: [["tests/checkout.test.ts", "+88"]] },
+        { id: "s5", l: "Run npm test", t: "2:58pm", new: true, sum: "All tests pass.", cmds: [["npm test", "61 passed · 34s"]] },
+        { id: "s6", l: "Says it's ready to deploy", t: "3:02pm", new: true, current: true, sum: "Done, and waiting for your next message.", said: "Fixed. Guest orders without an address use the billing address. Ready to deploy when you are." },
+      ] },
+    ],
+    needs: [],
+    tail: ["Fixed. Guest orders without an address use the billing address.", "Ready to deploy when you are."],
+  },
+
+  { id: "research", title: "Compare competitors' pricing pages", repo: "research", harness: "Grok", state: "turn", age: "52m",
+    did: "Wrote research/pricing.md: 6 of 8 offer a yearly discount, most often 2 months free.", next: "The report is ready to read.",
+    goals: [
+      { id: "g0", label: "Compare competitors' pricing pages", by: "You · 10:00am", steps: [
+        { id: "s1", l: "Search for 8 competitors", t: "10:01am", sum: "Picked 8 tools in the same space, by search share.", cmds: [["web search", "8 results kept"]] },
+        { id: "s2", l: "Read 8 pricing pages", t: "10:30am", sum: "Plans, prices and what each plan includes.", cmds: [["read 8 pages", "8 of 8"]] },
+      ] },
+      { id: "g1", label: "add which ones show annual discounts", by: "You · 12:15pm", steps: [
+        { id: "s3", l: "Check yearly discounts", t: "12:20pm", sum: "6 of 8 offer one. 4 say “2 months free”; 2 say a percentage." },
+        { id: "s4", l: "Write research/pricing.md", t: "3:14pm", new: true, current: true, sum: "The full comparison, with a table of prices and discounts.", files: [["research/pricing.md", "+140"]], said: "6 of 8 show a yearly discount. The most common is 2 months free." },
+      ] },
+    ],
+    needs: [],
+    tail: ["Done. research/pricing.md has the full table.", "6 of 8 show a yearly discount. The most common is 2 months free."],
+  },
+
+  { id: "invoices", title: "Move invoices from SQLite to Postgres", repo: "ledger-api", harness: "Codex", state: "working", age: "now", now: "Running migration tests", count: "18/42",
+    did: "Wrote the migration, ran it on a copy and updated 6 queries.",
+    goals: [
+      { id: "g0", label: "Move invoices from SQLite to Postgres", by: "You · 9:30am", steps: [
+        { id: "s1", l: "Read the invoices schema", t: "9:31am", sum: "4 tables, 48,213 invoice rows.", files: [["db/schema.sql"]] },
+        { id: "s2", l: "Write migration 0042", t: "10:10am", sum: "Creates the Postgres tables and copies the rows in batches of 1,000.", files: [["migrations/0042_invoices.sql", "+96"]] },
+        { id: "s3", l: "Asked whether to keep old ids", t: "10:20am", sum: "Asked whether invoice ids should stay the same.", ask: { q: "Keep the old invoice ids?", a: "Keep them", by: "You · 10:44am" } },
+        { id: "s4", l: "Run the migration on a copy", t: "11:30am", sum: "All 48,213 rows copied; counts match.", cmds: [["npm run migrate -- --copy", "48,213 rows · 2m 10s"]] },
+        { id: "s5", l: "Edit the invoice queries ×6", t: "2:20pm", new: true, sum: "Switched 6 queries to Postgres syntax.", files: [["src/invoices/repo.ts", "+71 −58"]] },
+        { id: "s6", l: "Running migration tests", t: "4:01pm", new: true, current: true, sum: "Running the migration test suite.", cmds: [["npm test -- migrations", "18/42"]] },
+      ] },
+    ],
+    needs: [],
+    tail: [],
+  },
+
+  { id: "seo", title: "Write 12 suburb landing pages", repo: "northwind-site", harness: "Claude Code", state: "working", age: "now", now: "Writing page 7 of 12: Richmond", count: "7/12",
+    did: "Wrote 6 pages (Fitzroy to Carlton) from the template.",
+    goals: [
+      { id: "g0", label: "Write 12 suburb landing pages", by: "You · 7:50am", steps: [
+        { id: "s1", l: "Read the page template", t: "7:51am", sum: "The template has 5 sections and a local FAQ.", files: [["content/suburbs/_template.mdx"]] },
+        { id: "s2", l: "Read the keyword list", t: "7:53am", sum: "12 suburbs with their search volumes.", files: [["seo/keywords.csv"]] },
+        { id: "s3", l: "Write pages 1–3", t: "9:10am", sum: "Fitzroy, Collingwood and Brunswick.", files: [["content/suburbs/fitzroy.mdx", "+88"], ["+2 more"]] },
+        { id: "s4", l: "Write pages 4–6", t: "1:40pm", sum: "Northcote, Carlton and Southbank.", files: [["content/suburbs/northcote.mdx", "+91"], ["+2 more"]] },
+        { id: "s5", l: "Writing page 7 of 12: Richmond", t: "4:04pm", new: true, current: true, sum: "Writing the Richmond page.", files: [["content/suburbs/richmond.mdx"]] },
+      ] },
+    ],
+    needs: [],
+    tail: [],
+  },
+];
+
+// Runtime state, per agent and for the page.
+for (const a of AGENTS) { a.ans = {}; a.elseOpen = {}; a.side = {}; a.text = null; a.edited = false; a.seen = false; a.sent = 0; for (const n of a.needs) n.done = false; }
+const S = { view: "dash", id: null, tab: "agents", open: new Set(), focus: null };
+
+// ---- Helpers ----
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const plural = (n, w, ws) => `${n} ${n === 1 ? w : ws || w + "s"}`;
+const byId = (id) => AGENTS.find((a) => a.id === id);
+const openNeeds = (a) => a.needs.filter((n) => !n.done);
+const allSteps = (a) => a.goals.flatMap((g) => g.steps);
+const newSteps = (a) => (a.seen ? [] : allSteps(a).filter((s) => s.new));
+const stepById = (a, id) => allSteps(a).find((s) => s.id === id);
+const stateLabel = { needs: "Needs you", working: "Working", turn: "Your turn" };
+const agentWord = (a) => a.harness;
+const ICON = {
+  back: '<path d="M10 3.5 5.5 8l4.5 4.5" />',
+  chev: '<path d="M6 3.5 10.5 8 6 12.5" />',
+  check: '<path d="m3.5 8.5 3 3 6-7" />',
+  branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"/>',
+  chat: '<path d="M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7l-3 2.5v-2.5h0a2 2 0 0 1-1.5-2z"/>',
+  term: '<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="m4.5 6 2 2-2 2M8.5 10.5h3"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  stop: '<rect x="4" y="4" width="8" height="8" rx="1.5"/>',
+  grid: '<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
+  away: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>',
+  bang: '<path d="M8 4v4.5M8 11.2v.1"/>',
+  up: '<path d="M8 13V3.5M4 7.5l4-4 4 4"/>',
+};
+const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+let toastT;
+function toast(html, ms = 2600) { const t = $("#toast"); t.innerHTML = html; t.hidden = false; t.classList.remove("enter"); void t.offsetWidth; t.classList.add("enter"); clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), ms); }
+function needsLine(a) {
+  const ns = openNeeds(a); if (!ns.length) return "";
+  const keys = ns.map((n) => n.key.charAt(0).toLowerCase() + n.key.slice(1));
+  return `${plural(ns.length, "answer")}: ${keys.length > 1 ? keys.slice(0, -1).join(", ") + " and " + keys.at(-1) : keys[0]}`;
+}
+const order = { needs: 0, turn: 1, working: 2 };
+const sorted = () => AGENTS.slice().sort((x, y) => order[x.state] - order[y.state] || openNeeds(y).length - openNeeds(x).length);
+
+// ---- Sidebar ----
+function renderSide() {
+  const total = AGENTS.reduce((k, a) => k + openNeeds(a).length, 0);
+  $("#side").innerHTML = `
+    <div class="logo">GenUI Agent <span class="tag">sample</span></div>
+    <button class="srow" data-act="new">${icon("plus")}<span class="st">New session</span></button>
+    <button class="srow ${S.view === "dash" ? "on" : ""}" data-act="dash">${icon("grid")}<span class="st">Orchestrator</span>${total ? `<span class="badge">${total}</span>` : ""}</button>
+    <div class="sgroup">Sessions</div>
+    ${sorted().map((a) => `<button class="srow ${S.view === "sess" && S.id === a.id ? "on" : ""}" data-act="open" data-id="${a.id}"><span class="dot ${a.state}"></span><span class="st">${esc(a.title)}</span>${openNeeds(a).length ? `<span class="badge">${openNeeds(a).length}</span>` : newSteps(a).length ? `<span class="newchip">${newSteps(a).length} new</span>` : ""}</button>`).join("")}
+    <div class="sfoot">A prototype with sample sessions. Nothing here is connected to a real agent.</div>`;
+}
+
+// ---- Dashboard: the mini branches flow for one agent ----
+function miniFlow(a) {
+  const nodes = [];
+  a.goals.forEach((g, gi) => g.steps.forEach((s) => nodes.push({ gi, s })));
+  const W = 236, pitch = 20, maxN = 10;
+  const hidden = Math.max(0, nodes.length - maxN), vis = nodes.slice(hidden);
+  const x0 = hidden ? 30 : 8, yOf = (gi) => (gi === 0 ? 12 : 32);
+  vis.forEach((n, i) => { n.x = x0 + i * pitch; n.y = yOf(n.gi); });
+  const lastGi = a.goals.length - 1;
+  let svg = "";
+  // Lines: the trunk, then each branch leaving it on an S-curve.
+  const byG = (gi) => vis.filter((n) => n.gi === gi);
+  const trunk = byG(0);
+  const branchStarts = a.goals.map((_, gi) => byG(gi)[0]).filter((n, gi) => gi > 0 && n);
+  const tEnd = trunk.length ? trunk.at(-1).x : x0 - 10;
+  if (trunk.length) svg += `<path class="mf-line ${lastGi === 0 ? "cur" : ""}" d="M${trunk[0].x},12 H${tEnd}"/>`;
+  if (branchStarts.length) svg += `<path class="mf-line dash" d="M${Math.max(tEnd, x0 - 10)},12 H${branchStarts.at(-1).x - pitch}"/>`;
+  a.goals.forEach((g, gi) => {
+    if (!gi) return; const ns = byG(gi); if (!ns.length) return;
+    const f = ns[0], from = f.x - pitch;
+    svg += `<path class="mf-line ${gi === lastGi ? "cur" : ""}" d="M${from},12 C${from + 10},12 ${f.x - 10},32 ${f.x},32 H${ns.at(-1).x}"/>`;
+  });
+  if (hidden) svg += `<text class="mf-more" x="0" y="16">+${hidden}</text>`;
+  // Where you left off: a dashed tick before the first step that is new to you.
+  const firstNew = vis.findIndex((n) => n.s.new && !a.seen);
+  if (firstNew > 0) { const x = vis[firstNew].x - pitch / 2; svg += `<line class="mf-look" x1="${x}" y1="2" x2="${x}" y2="42"><title>You looked at ${LEFT}</title></line>`; }
+  for (const n of vis) {
+    const s = n.s, label = esc(s.l);
+    if (s.current) {
+      if (a.state === "needs") svg += `<g><title>${label}</title><circle class="mf-halo" cx="${n.x}" cy="${n.y}" r="10"/><circle class="mf-disc" cx="${n.x}" cy="${n.y}" r="7"/><path class="mf-mark" d="M${n.x},${n.y - 3} V${n.y + 0.6} M${n.x},${n.y + 3.2} v0.1"/></g>`;
+      else if (a.state === "working") svg += `<g><title>${label}</title><circle class="mf-work" cx="${n.x}" cy="${n.y}" r="4"/><path class="mf-orbit" d="M${n.x + 8},${n.y} A8,8 0 1 1 ${n.x - 2.8},${n.y - 7.5}"><animateTransform attributeName="transform" type="rotate" from="0 ${n.x} ${n.y}" to="360 ${n.x} ${n.y}" dur="0.8s" repeatCount="indefinite"/></path></g>`;
+      else svg += `<g><title>${label}</title><circle class="mf-turn" cx="${n.x}" cy="${n.y}" r="6"/></g>`;
+    } else {
+      const amber = s.ask && s.ask.needs && s.ask.needs.some((id) => !a.needs.find((x) => x.id === id).done);
+      svg += `<circle class="${amber ? "mf-amber" : s.new && !a.seen ? "mf-new" : "mf-done"}" cx="${n.x}" cy="${n.y}" r="${amber ? 4.5 : 3.5}"><title>${label}</title></circle>`;
+    }
+  }
+  return `<svg width="${W}" height="44" viewBox="0 0 ${W} 44" role="img" aria-label="${a.goals.length} goals, ${nodes.length} steps">${svg}</svg>`;
+}
+
+function agentRow(a) {
+  const ns = openNeeds(a), nw = newSteps(a).length;
+  const line2 = a.state === "needs" ? `<div class="ar-l need"><span class="k">Needs</span><span class="v">${esc(needsLine(a))}</span></div>`
+    : a.state === "working" ? `<div class="ar-l now"><span class="k">Now</span><span class="v"><span class="shine">${esc(a.now)}</span> <span class="t2 num">${esc(a.count || "")}</span>${ns.length ? ` <span class="old">· ${plural(ns.length, "answer")} still open</span>` : ""}</span></div>`
+    : `<div class="ar-l"><span class="k">Next</span><span class="v" style="color:var(--text-1)">${esc(a.next)}</span></div>`;
+  return `<div class="arow" role="button" tabindex="0" data-act="open" data-id="${a.id}">
+    <div style="min-width:0">
+      <div class="ar-t"><span class="dot ${a.state}"></span><span class="tt">${esc(a.title)}</span></div>
+      <div class="ar-sub">${esc(a.repo)} · ${esc(a.harness)} · ${plural(a.goals.length, "goal")}</div>
+      <div class="ar-l"><span class="k">Did</span><span class="v">${esc(a.did)}</span></div>
+      ${line2}
+    </div>
+    <div class="ar-flow">${miniFlow(a)}</div>
+    <div class="ar-st">
+      <span class="stl ${a.state}"><span class="d"></span>${stateLabel[a.state]}${ns.length ? ` <span class="badge" style="margin-left:2px">${ns.length}</span>` : ""}</span>
+      <span class="ar-meta">${nw ? `<span class="newchip">${nw} new</span>` : ""}<span class="num">${esc(a.age)}</span></span>
+    </div>
+  </div>`;
+}
+
+function renderDash() {
+  const c = { needs: 0, turn: 0, working: 0 }; AGENTS.forEach((a) => c[a.state]++);
+  const total = AGENTS.reduce((k, a) => k + openNeeds(a).length, 0);
+  const asking = AGENTS.filter((a) => openNeeds(a).length).length;
+  const body = S.tab === "agents"
+    ? `<div class="card rows">${sorted().map(agentRow).join("")}</div>
+       <div class="dlegend"><span><span class="dot needs"></span>Needs you</span><span><span class="dot turn"></span>Your turn</span><span><span class="dot working"></span>Working</span><span><span class="lg-look"></span>Where you left off</span><span>Top line: first goal · lower line: later requests</span></div>`
+    : allNeeds();
+  $("#main").innerHTML = `<div class="dash enter">
+    <div class="dhead">
+      <div>
+        <h1>Orchestrator</h1>
+        <p class="back-line">Welcome back. You were away <b>${AWAY}</b>, since ${LEFT}.</p>
+      </div>
+      <div class="seg" role="tablist">
+        <button role="tab" class="${S.tab === "agents" ? "on" : ""}" data-act="tab" data-tab="agents" aria-selected="${S.tab === "agents"}">Agents · ${AGENTS.length}</button>
+        <button role="tab" class="${S.tab === "needs" ? "on" : ""}" data-act="tab" data-tab="needs" aria-selected="${S.tab === "needs"}">All needs${total ? ` <span class="badge">${total}</span>` : ""}</button>
+      </div>
+    </div>
+    <div class="sumline"><b class="am">${c.needs} need you</b> · ${plural(total, "answer")} across ${plural(asking, "agent")} · <b>${c.turn}</b> your turn · <b>${c.working}</b> working</div>
+    ${body}
+  </div>`;
+}
+
+function allNeeds() {
+  const groups = sorted().filter((a) => openNeeds(a).length);
+  if (!groups.length) return `<div class="card allclear">${icon("check", "s14")}Nothing needs you. Every question is answered.</div>`;
+  return `<div class="card nlist">${groups.map((a) => `<div class="ngroup">
+      <div class="ng-h"><span class="dot ${a.state}"></span>${esc(a.title)} <span class="t2">${esc(a.harness)}</span></div>
+      ${openNeeds(a).map((n) => `<button class="nitem" data-act="goto-need" data-id="${a.id}" data-need="${n.id}">
+        <span class="q">${esc(n.q)}</span><span class="c">${esc(n.ctx)}</span>
+        <span class="w">${n.old ? `<span class="old">open ${esc(n.open)}</span>` : `<span>${esc(n.when)}</span>`}${icon("chev", "s12")}</span>
+      </button>`).join("")}
+      <div class="ng-foot"><button class="btn btn-tint sm" data-act="open" data-id="${a.id}">Answer ${openNeeds(a).length > 1 ? `all ${openNeeds(a).length}` : "it"}</button></div>
+    </div>`).join("")}</div>`;
+}
+
+// ---- Session: the real terminal on the left, the rail on the right ----
+const bullet = (a) => (a.harness === "Codex" ? "•" : a.harness === "Grok" ? "◆" : "⏺");
+function termLines(a) {
+  const L = [], b = bullet(a);
+  for (const g of a.goals) {
+    L.push({ c: "u", t: `> ${g.label}` });
+    for (const s of g.steps) {
+      const first = L.length;
+      if (s.sent) { s.sent.forEach((t, i) => L.push({ c: "u", t: (i ? "  " : "> ") + t })); }
+      else if (s.current && a.tail && a.tail.length) {
+        if (s.l.startsWith("Asks") || s.ask || s.said) { a.tail.forEach((t, i) => L.push({ c: i ? "ind m" : "m", t: i ? t : `${b} ${t}` })); }
+      } else if (s.term) { L.push({ c: "b", t: `${b} ${s.term[0]}` }); L.push({ c: "r", t: `⎿  ${s.term[1]}` }); }
+      else if (s.cmds) { for (const [cmd, res] of s.cmds) { L.push({ c: "b", t: `${b} Bash(${cmd})` }); L.push({ c: /passed|compiled|match/.test(res) ? "ok" : "r", t: `⎿  ${res}` }); } }
+      else if (s.files) { const f = s.files[0]; const verb = /^Read/.test(s.l) ? "Read" : /^Write|^Draft|^Add/.test(s.l) ? "Write" : "Update"; L.push({ c: "b", t: `${b} ${verb}(${f[0]})` }); L.push({ c: "r", t: `⎿  ${f[1] ? f[1].replace("−", "-") : s.files.length > 1 ? `${s.files.length} files` : "Read 1 file"}` }); }
+      else if (s.ask && s.ask.a) { L.push({ c: "b am", t: `${b} ${s.ask.q}` }); L.push({ c: "u", t: `> ${s.ask.a}` }); }
+      else L.push({ c: "b", t: `${b} ${s.l}` });
+      if (s.said && !s.current) L.push({ c: "m", t: `${b} ${s.said}` });
+      if (s.ask && !s.ask.a && !s.current && s.said == null) L.push({ c: "m am", t: `${b} ${s.ask.q}` });
+      if (s.ask && !s.ask.a && !s.current && s.said) L.push({ c: "ind m", t: s.ask.q });
+      if (L[first]) L[first].step = s.id;
+    }
+  }
+  if (a.state === "working") L.push({ c: "work", t: `✻ ${a.now}… (esc to interrupt)` });
+  return L;
+}
+function renderTerm(a) {
+  return termLines(a).map((l) => `<div class="tl ${l.c}"${l.step ? ` data-tstep="${l.step}"` : ""}>${esc(l.t) || " "}</div>`).join("");
+}
+
+function renderSess() {
+  const a = byId(S.id);
+  $("#main").innerHTML = `<div class="sess">
+    <div class="shead">
+      <button class="ibtn" data-act="dash" aria-label="Back to the Orchestrator" title="Back to the Orchestrator">${icon("back")}</button>
+      <span class="dot ${a.state}" id="hdot"></span><span class="tt">${esc(a.title)}</span>
+      <span class="meta">${esc(a.repo)} · ${esc(a.harness)}</span>
+      <button class="ibtn" data-act="new" title="New session in ${esc(a.repo)}" aria-label="New session here">${icon("plus")}</button>
+      <button class="ibtn" data-act="stop" title="Stop this session" aria-label="Stop">${icon("stop")}</button>
+    </div>
+    <div class="sbody">
+      <section class="term" aria-label="${esc(a.harness)} terminal">
+        <div class="tstrip"><span class="d ${a.state}" id="tdot"></span>${esc(a.harness)} · ~/${esc(a.repo)}</div>
+        <div class="tscroll" id="tscroll">${renderTerm(a)}</div>
+        <div class="tbox">&gt; <span style="color:#6a6a6a">${a.state === "working" ? "" : "Type here, or answer on the right"}</span></div>
+        <div class="thint">? for shortcuts</div>
+      </section>
+      <aside class="rail" id="rail" aria-label="Flowchart and what it needs"></aside>
+    </div>
+  </div>`;
+  renderRail();
+  const ts = $("#tscroll"); ts.scrollTop = ts.scrollHeight;
+}
+
+function needHTML(a, n, i) {
+  if (n.done) return `<div class="card need done enter"><span class="gck">${icon("check", "s12")}</span><span class="q">${esc(n.q)}</span><span class="a">${esc(n.answer)}</span></div>`;
+  const ans = a.ans[n.id], st = stepById(a, n.step), sd = a.side[n.id];
+  const opt = ([label, qual]) => { const on = ans === label; return `<button class="opt ${on ? "on" : ""}" data-act="opt" data-need="${n.id}" data-v="${esc(label)}">${esc(label)}${qual ? `<span class="q2">${esc(qual)}</span>` : ""}${on ? `<span class="ck">${icon("check", "s14")}</span>` : ""}</button>`; };
+  const isElse = a.elseOpen[n.id] || (ans && !n.opts.some((o) => o[0] === ans));
+  return `<div class="card need ${S.focus === n.id ? "focus" : ""}" id="need-${n.id}">
+    <div class="nh"><span>${i + 1} of ${a.needs.length}</span><span>·</span><button class="lnk" data-act="goto-step" data-step="${n.step}" title="Show this step in the flowchart">${esc(st.l)}</button><span class="sp"></span>${n.old ? `<span class="old" title="Asked at ${esc(n.when)}">open ${esc(n.open)}</span>` : `<span class="num">${esc(n.when)}</span>`}</div>
+    <div class="nq">${esc(n.q)}</div>
+    <div class="nc">${esc(n.ctx)}</div>
+    <div class="opts">${n.opts.map(opt).join("")}
+      ${isElse ? `<textarea class="elsein" rows="1" data-else="${n.id}" id="else-${n.id}" placeholder="Type your own answer" aria-label="Your own answer">${esc(isElse && ans && !n.opts.some((o) => o[0] === ans) ? ans : "")}</textarea>` : `<button class="opt else" data-act="else" data-need="${n.id}">Something else</button>`}
+    </div>
+    ${sd && sd.busy ? `<div class="side-draft enter"><div class="h"><span class="spin"></span><span class="shine">Reading the session and the files</span></div></div>` : ""}
+    ${sd && sd.text ? `<div class="side-draft enter"><div class="h">${icon("chat", "s14")}Side agent · read the whole session</div>${esc(sd.text)}<div class="acts"><button class="btn btn-tint sm" data-act="use-side" data-need="${n.id}">Use this</button><button class="btn btn-text sm" data-act="toast-side">Keep talking</button></div></div>` : ""}
+    <div class="nfoot">${!sd ? `<button class="btn btn-neutral sm" data-act="discuss" data-need="${n.id}" title="A side agent that knows this session works it out with you">${icon("chat", "s14")}Discuss it</button>` : ""}<span class="sp"></span>${ans ? `<span class="t3" style="font-size:13px">In your reply</span>` : ""}</div>
+  </div>`;
+}
+
+function composeText(a) {
+  const ns = a.needs.filter((n) => !n.done && a.ans[n.id]);
+  if (!ns.length) return "";
+  if (ns.length === 1 && openNeeds(a).length === 1) return `${ns[0].key}: ${a.ans[ns[0].id]}.`.replace(/\.\.$/, ".");
+  return `About your questions:\n${ns.map((n, i) => `${i + 1}. ${n.key}: ${a.ans[n.id].replace(/\.$/, "")}.`).join("\n")}`;
+}
+
+function replyHTML(a) {
+  const open = openNeeds(a), answered = open.filter((n) => a.ans[n.id]).length, left = open.length - answered;
+  const text = a.edited ? a.text : composeText(a);
+  return `<div class="card reply" id="reply">
+    <div class="h"><span>Your reply to ${esc(agentWord(a))}</span><span class="sp"></span><span class="num">${answered}/${open.length} answered</span></div>
+    <textarea id="replytext" placeholder="Pick answers above and they gather here as one message. Add anything else you want to say." aria-label="Your reply">${esc(text)}</textarea>
+    <div class="f"><span class="note">${left && answered ? `${plural(left, "question")} left open stays on this list.` : "Typed into the session as your next message."}</span>
+      <button class="btn btn-tint" data-act="send" id="sendbtn" ${text.trim() ? "" : "disabled"}>${icon("up", "s14")}${answered > 1 ? `Send ${answered} answers` : "Send reply"}</button></div>
+  </div>`;
+}
+
+function detailHTML(a, s) {
+  const parts = [`<p>${esc(s.sum || s.l)}</p>`];
+  if (s.files) parts.push(`<div><div class="dk">Touched</div><div class="refs">${s.files.map(([f, d]) => /^\+\d+ more$/.test(f) ? `<span class="t3" style="font-size:13px">${esc(f)}</span>` : `<span class="refline"><span class="ref">${esc(f)}</span>${d ? `<span class="diff">${esc(d)}</span>` : ""}</span>`).join("")}</div></div>`);
+  if (s.cmds) parts.push(`<div><div class="dk">Ran</div><div class="refs">${s.cmds.map(([c, r]) => `<span class="refline"><span class="ref">${esc(c)}</span><span class="t2" style="font-size:13px">${esc(r)}</span></span>`).join("")}</div></div>`);
+  if (s.said) parts.push(`<div><div class="dk">${esc(a.harness)} said</div><p class="said">${esc(s.said)}</p></div>`);
+  if (s.ask) {
+    if (s.ask.a) parts.push(`<div><div class="dk">Asked</div><p>${esc(s.ask.q)}</p><p class="ans"><span class="gck">${icon("check", "s12")}</span>${esc(s.ask.a)} <span class="t3" style="font-size:13px">${esc(s.ask.by)}</span></p></div>`);
+    else {
+      const ns = s.ask.needs.map((id) => a.needs.find((n) => n.id === id));
+      parts.push(`<div><div class="dk">Asked</div>${ns.map((n) => n.done
+        ? `<p>${esc(n.q)}</p><p class="ans"><span class="gck">${icon("check", "s12")}</span>${esc(n.answer)} <span class="t3" style="font-size:13px">You · now</span></p>`
+        : `<p>${esc(n.q)} <button class="lnk old" data-act="goto-need" data-id="${a.id}" data-need="${n.id}">Still open · answer it</button></p>`).join("")}</div>`);
+    }
+  }
+  parts.push(`<div class="dacts"><button class="lnk" data-act="show-term" data-step="${s.id}">${icon("term", "s12")}Show in the terminal</button><span class="t3" style="font-size:13px">${esc(s.t || "")}</span></div>`);
+  return `<div class="tdetail enter">${parts.join("")}</div>`;
+}
+
+function treeHTML(a) {
+  const lastG = a.goals.length - 1;
+  let awayShown = false, h = "";
+  a.goals.forEach((g, gi) => {
+    const lane = gi === 0 ? 11 : 29;
+    h += `<div class="trow goal" data-g="${gi}" data-lane="${lane}"><span class="nd goal ${gi === lastG ? "cur" : ""}" style="left:${lane}px"></span><span class="lab">${gi ? `<span class="br">${icon("branch", "s14")}</span>` : ""}${esc(g.label)}</span><span class="rm">${esc(g.by)}</span></div>`;
+    for (const s of g.steps) {
+      if (s.new && !awayShown) { awayShown = true; h += `<div class="awayrow">Since you were away · ${LEFT}</div>`; }
+      const amber = s.ask && s.ask.needs && s.ask.needs.some((id) => !a.needs.find((n) => n.id === id).done);
+      const nd = s.current ? a.state : amber ? "amber" : "done";
+      const cls = ["trow", "step", s.current && a.state === "needs" ? "amber" : amber ? "amber" : "", S.open.has(s.id) ? "sel" : ""].join(" ");
+      const label = s.current && a.state === "working" ? `<span class="shine">${esc(s.l)}</span>` : esc(s.l);
+      const meta = s.current && a.state === "working" && a.count ? `<span class="num t2">${esc(a.count)}</span>` : `<span class="num">${esc(s.t || "")}</span>`;
+      h += `<div class="${cls}" data-act="step" data-step="${s.id}" data-g="${gi}" data-lane="${lane}" id="st-${s.id}" role="button" tabindex="0" aria-expanded="${S.open.has(s.id)}">
+        <span class="nd ${nd}" style="left:${lane}px">${nd === "needs" ? `<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round">${ICON.bang}</svg>` : ""}</span>
+        <span class="lab">${label}</span><span class="rm">${s.new && !a.seen ? `<span class="nw" title="New since you looked"></span>` : ""}${meta}${icon("chev", "s12 chev")}</span></div>`;
+      if (S.open.has(s.id)) h += detailHTML(a, s);
+    }
+  });
+  return `<div class="tree" id="tree"><svg class="lines" id="tlines"></svg>${h}</div>`;
+}
+
+// Draw the git-graph lines from where the rows actually sit, so opened steps stretch them.
+function drawLines() {
+  const tree = $("#tree"), svg = $("#tlines"); if (!tree || !svg) return;
+  const a = byId(S.id), lastG = a.goals.length - 1;
+  const mid = (el) => el.offsetTop + el.offsetHeight / 2;
+  const rows = [...tree.querySelectorAll(".trow")];
+  const G = a.goals.map((_, gi) => rows.filter((r) => +r.dataset.g === gi));
+  let d = "";
+  const path = (cls, dd) => (d += `<path class="${cls}" d="${dd}"/>`);
+  const t = G[0], tTop = mid(t[0]), tBot = mid(t.at(-1));
+  path(lastG === 0 ? "ln-cur" : "ln-grey", `M11,${tTop} V${tBot}`);
+  if (lastG > 0) path("ln-grey ln-dash", `M11,${tBot} V${mid(G[lastG][0]) - 26}`);
+  for (let gi = 1; gi <= lastG; gi++) {
+    const top = mid(G[gi][0]), bot = mid(G[gi].at(-1)), y0 = top - 26;
+    path(gi === lastG ? "ln-cur" : "ln-grey", `M11,${y0} C11,${y0 + 14} 29,${top - 12} 29,${top} V${bot}`);
+  }
+  svg.setAttribute("height", tree.offsetHeight);
+  svg.innerHTML = d;
+}
+
+function renderRail() {
+  const a = byId(S.id), rail = $("#rail"), keep = rail.scrollTop;
+  const ns = openNeeds(a), nw = newSteps(a);
+  const awayNews = nw.filter((s) => !s.current).map((s) => s.sum.replace(/\.$/, "")).slice(0, 2);
+  const steps = allSteps(a).length;
+  const needsSec = a.needs.length ? `<section>
+      <div class="rsec-h">Needs from you ${ns.length ? `<span class="badge">${ns.length}</span>` : ""}<span class="sp"></span><span class="t3">from the whole session</span></div>
+      <div class="needs">${a.needs.map((n, i) => needHTML(a, n, i)).join("")}
+        ${ns.length ? replyHTML(a) : `<div class="card allclear enter">${icon("check", "s14")}<span>Sent to ${esc(a.harness)} · now. Nothing else needs you here.</span></div>`}
+      </div></section>` : "";
+  rail.innerHTML = `
+    ${nw.length ? `<div class="away"><div class="h">${icon("away", "s14")}While you were away · ${AWAY}</div><p>${plural(nw.length, "new step")}. ${esc(awayNews.join(". "))}${awayNews.length ? "." : ""}${ns.length ? ` It asked ${plural(ns.filter((n) => !n.old).length || ns.length, "question")}.` : ""}</p></div>` : ""}
+    ${needsSec}
+    <section>
+      <div class="rsec-h">Flowchart <span class="t3">${plural(a.goals.length, "goal")} · ${plural(steps, "step")}</span><span class="sp"></span><span class="t3">click a step to see it</span></div>
+      ${treeHTML(a)}
+    </section>
+    ${a.id === "pricing" ? `<section class="sides"><div class="rsec-h">On the side</div><div class="srow2">${icon("chat", "s14")}Is 3 plans enough for small teams? <span class="t3">· 11:40am</span></div></section>` : ""}`;
+  rail.scrollTop = keep;
+  drawLines();
+}
+
+function render() {
+  renderSide();
+  if (S.view === "dash") renderDash(); else renderSess();
+}
+
+// ---- Actions ----
+function setAnswer(a, id, v) { a.ans[id] = v; }
+function sync(a) { if (!a.edited) { const t = $("#replytext"); if (t) t.value = composeText(a); } const b = $("#sendbtn"); if (b) b.disabled = !($("#replytext").value.trim()); }
+
+function send(a) {
+  const text = ($("#replytext").value || "").trim(); if (!text) return;
+  const btn = $("#sendbtn"); btn.disabled = true; btn.innerHTML = `<span class="spin"></span>Sending`;
+  setTimeout(() => {
+    for (const n of openNeeds(a)) if (a.ans[n.id]) { n.done = true; n.answer = a.ans[n.id]; }
+    // The answers go in as your next message, which continues the current goal.
+    const g = a.goals.at(-1), cur = g.steps.find((s) => s.current);
+    if (cur) { cur.current = false; }
+    a.sent++;
+    g.steps.push({ id: `w${a.sent}`, l: "Working on your answers", t: "4:06pm", new: true, current: true, sum: "Reading your reply and carrying on.", sent: text.split("\n") });
+    a.state = "working"; a.now = "Working on your answers"; a.count = ""; a.age = "now";
+    a.tail = [];
+    a.edited = false; a.text = null; a.ans = {};
+    render();
+    toast(`${icon("check", "s14")}Sent to ${esc(a.harness)} · now`);
+  }, 700);
+}
+
+function discuss(a, id) {
+  const n = a.needs.find((x) => x.id === id);
+  a.side[id] = { busy: true }; renderRail();
+  setTimeout(() => { a.side[id] = { text: n.side.text, pick: n.side.pick }; renderRail(); }, 1500);
+}
+
+function gotoStep(a, stepId) {
+  S.open.add(stepId); renderRail();
+  const el = $(`#st-${stepId}`); if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("flash");
+}
+function gotoNeed(id, need) {
+  S.view = "sess"; S.id = id; S.focus = need; render();
+  const el = $(`#need-${need}`); if (el) el.scrollIntoView({ block: "center" });
+  setTimeout(() => { S.focus = null; const e = $(`#need-${need}`); if (e) e.classList.remove("focus"); }, 2400);
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  const act = t.dataset.act, a = S.id ? byId(S.id) : null;
+  switch (act) {
+    case "dash": if (S.view === "sess" && a) a.seen = true; S.view = "dash"; S.open.clear(); render(); $("#main").scrollTop = 0; break;
+    case "open": if (S.view === "sess" && a && a.id !== t.dataset.id) a.seen = true; S.view = "sess"; S.id = t.dataset.id; S.open.clear(); render(); break;
+    case "tab": S.tab = t.dataset.tab; renderDash(); break;
+    case "goto-need": e.stopPropagation(); if (S.view === "sess" && S.id === t.dataset.id) { const el = $(`#need-${t.dataset.need}`); if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("focus"); setTimeout(() => el.classList.remove("focus"), 2400); } } else gotoNeed(t.dataset.id, t.dataset.need); break;
+    case "step": if (e.target.closest(".lnk")) break; S.open.has(t.dataset.step) ? S.open.delete(t.dataset.step) : S.open.add(t.dataset.step); renderRail(); break;
+    case "goto-step": gotoStep(a, t.dataset.step); break;
+    case "opt": { const id = t.dataset.need; a.elseOpen[id] = false; setAnswer(a, id, a.ans[id] === t.dataset.v ? undefined : t.dataset.v); if (a.ans[id] === undefined) delete a.ans[id]; renderRail(); break; }
+    case "else": a.elseOpen[t.dataset.need] = true; delete a.ans[t.dataset.need]; renderRail(); setTimeout(() => $(`#else-${t.dataset.need}`)?.focus(), 20); break;
+    case "discuss": discuss(a, t.dataset.need); break;
+    case "use-side": { const id = t.dataset.need, sd = a.side[id], n = a.needs.find((x) => x.id === id); a.elseOpen[id] = !n.opts.some((o) => o[0] === sd.pick); setAnswer(a, id, sd.pick); renderRail(); break; }
+    case "toast-side": toast(`${icon("chat", "s14")}In the app this opens the side conversation, with this draft in it.`); break;
+    case "send": send(a); break;
+    case "show-term": {
+      const line = $(`#tscroll [data-tstep="${t.dataset.step}"]`); if (!line) break;
+      line.scrollIntoView({ block: "center", behavior: "smooth" });
+      let el = line; for (let i = 0; i < 3 && el; i++) { el.classList.remove("hl"); void el.offsetWidth; el.classList.add("hl"); el = el.nextElementSibling; if (el && el.dataset.tstep) break; }
+      break;
+    }
+    case "new": toast(`${icon("plus", "s14")}New session: type and press Enter. Not part of this prototype.`); break;
+    case "stop": toast(`${icon("stop", "s14")}Stop asks you to confirm first. Not part of this prototype.`); break;
+  }
+});
+document.addEventListener("keydown", (e) => {
+  const t = e.target.closest?.(".trow.step, .arow"); if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t.click(); }
+});
+document.addEventListener("input", (e) => {
+  const a = S.id ? byId(S.id) : null; if (!a) return;
+  if (e.target.id === "replytext") { a.edited = true; a.text = e.target.value; const b = $("#sendbtn"); if (b) b.disabled = !e.target.value.trim(); return; }
+  const id = e.target.dataset.else;
+  if (id) { const v = e.target.value.trim(); if (v) a.ans[id] = v; else delete a.ans[id]; sync(a); const f = e.target.closest(".need").querySelector(".nfoot .t3"); if (!f && v) e.target.closest(".need").querySelector(".nfoot").insertAdjacentHTML("beforeend", `<span class="t3" style="font-size:13px">In your reply</span>`); }
+});
+window.addEventListener("resize", () => { if (S.view === "sess") drawLines(); });
+
+// A bare #agent-id in the link opens that session, for example #pricing.
+{ const h = location.hash.slice(1); if (byId(h)) { S.view = "sess"; S.id = h; } }
+render();
+</script>
