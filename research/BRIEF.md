@@ -13,13 +13,14 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
 - **A wrapper, not a new product.** The real, unmodified CLIs (Claude Code, Codex, Grok) run inside GenUI's window, so their updates need no work from us. GenUI watches through hooks and transcripts. It puts text in by typing it as the owner's next message. The only key it ever presses in the CLIs' menus is a single Esc, to close a question the owner has answered on the side. (Claude Code "channels" are deferred.)
 - **Look and feel:** the @pitus_ generative-UI style in `DESIGN.md`. The terminal is always dark.
 - **Agent view:** the real terminal on the left, a rail on the right.
-- **Flowchart = branches.** A git-graph style tree:
-  - The first goal is the trunk, and each new request or change of direction branches off it. The agent's work sits under each goal as steps.
-  - The tree only grows: settled steps are never rewritten.
-  - The current step is blue while the agent works, amber when it needs the owner, and grey when it's his turn. Clicking an amber step shows what's needed.
-  - It can be built by AI or instantly by code (there's a switch today). The research suggests merging the two into one tree with two layers; this is open.
+- **Flowchart = a timeline** (owner chose it on prototype v2 over the branches tree, which read as parallel work that never happened):
+  - One line, top to bottom, in the order things happened. Each message the owner sent starts a section, headed by his own words and the time: "You started", "You asked" or "You changed direction". The agent's steps sit under it as dots.
+  - Only work set aside when he changed direction steps off the line, with a × and the reason.
+  - It only grows: settled steps are never rewritten.
+  - The current step is blue while the agent works, amber when it needs the owner, and grey when it's his turn. Every step can be clicked to show what happened in it.
+  - It can be built by AI or instantly by code (there's a switch today). The research suggests merging the two into one timeline with two layers; this is open.
 - **Three ways to get help:**
-  - **Discuss it** on a question the agent asked: a side agent drafts the answer, which goes under the question; Send closes the question and types the answer in.
+  - **Discuss it** on a question the agent asked: it opens a side chat with its own side agent, with the question pinned on top. "Answer with this" writes the answer into the owner's reply, for him to check before sending.
   - **Ask on the side,** any time: a multi-step side agent about the session, with an optional message back.
   - **New session** for anything unrelated: the **+** in the header uses the same folder.
   - Not Claude Code's /btw: it's one-shot. Side agents are forks with read-only tools, and their discussions stay listed under the flowchart.
@@ -44,7 +45,7 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
 4. **Answer them in one go,** sent to the session as one complete message.
 5. **"Since you were away":** steps added since the owner last looked are highlighted.
 
-Not yet confirmed by the owner: the exact content of a step's detail, tracking asks over the whole session, the two "Did / Needs" lines, and one combined "needs from you" view across all agents.
+Prototype: `prototypes/v2/index.html`. The owner liked it, especially how it surfaces older questions he never answered properly. Not yet confirmed by the owner: the exact content of a step's detail, tracking asks over the whole session, the two "Did / Needs" lines, and one combined "needs from you" view across all agents.
 
 ## Phase 2: the orchestrator agent
 A supervisor agent that creates and manages agents, with each agent working in an isolated branch or worktree. The research's warnings about lead agents: they drift after a handful of reports, start doing the work themselves, and become the review bottleneck. The fix people report is a thin coordinator, plus code that does the merging and ranking.
