@@ -89,15 +89,18 @@ export async function message(id, text) {
   return pub(s);
 }
 
-// Write the single answer that goes back to the main agent.
-export async function compose(id, known = [], answerOnly = false) {
+// Write the single answer that goes back to the main agent. With options (a question from "Needs from
+// you"), it is one line that goes into the user's reply next to his other answers.
+export async function compose(id, known = [], answerOnly = false, options = null) {
   const s = raw(id);
   if (!s) throw new Error("Side discussion not found");
   if (s.busy) throw new Error("Still thinking");
   s.busy = true;
+  const settled = known.length ? ` The user has already decided these, so treat them as settled and don't ask for them again: ${known.map((k) => `"${String(k.title).slice(0, 200)}" = "${String(k.answer).slice(0, 300)}"`).join("; ")}.` : "";
+  const oneLine = `Now write the user's answer to the question, based on this side discussion. It goes into his reply to the main agent as one item of a list, so write one line, as the user: the decision, plus a short reason only when the main agent needs it.${options && options.length ? ` If one of these options is the decision, start with its exact label: ${options.map((o) => `"${String(o).slice(0, 120)}"`).join(", ")}.` : ""}${settled} Output only that line.`;
   try {
     const r = await claudeCall(opts(s, { resume: s.forkId,
-      prompt: `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion.${answerOnly ? " This is the answer to a question the main agent asked: answer that question and give the reasons, nothing more. Don't add new instructions, extra work or next steps it didn't ask about." : ""}${known.length ? ` The user has already decided these, so treat them as settled and don't ask for them again: ${known.map((k) => `"${String(k.title).slice(0, 200)}" = "${String(k.answer).slice(0, 300)}"`).join("; ")}.` : ""} Output only the message text, no preamble.` }));
+      prompt: Array.isArray(options) ? oneLine : `Now write the message the user will send back to the main agent, based on this side discussion. Write it as the user, addressed to the main agent. Lead with the decision or answer, then the reasons that matter, then any constraints it should carry forward, then anything still undecided. Be complete but tight: the main agent has NOT seen this discussion.${answerOnly ? " This is the answer to a question the main agent asked: answer that question and give the reasons, nothing more. Don't add new instructions, extra work or next steps it didn't ask about." : ""}${settled} Output only the message text, no preamble.` }));
     track(s, r);
     s.composed = String(r.result || "").trim();
   } finally { s.busy = false; children.delete(id); save(s); }

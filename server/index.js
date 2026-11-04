@@ -10,8 +10,8 @@ import { WebSocketServer } from "ws";
 import { ROOT, DATA, PORT, HOST, TOKEN, hookSecret, safeEqual, ID_RE, log } from "./config.js";
 import * as live from "./live.js";
 import { listSaved, readSession } from "./transcripts.js";
-import { generate, cached } from "./genui.js";
-import { buildDraft } from "./flowdraft.js";
+import { generate, cached, recordAnswers } from "./genui.js";
+import { buildTimeline } from "./timeline.js";
 import * as side from "./side.js";
 import { plan, stepPrompt } from "./plan.js";
 import { available, HARNESSES } from "./harness.js";
@@ -138,12 +138,19 @@ const server = http.createServer(async (req, res) => {
       const harness = url.searchParams.get("harness"), file = findFile(harness, url.searchParams.get("file"));
       if (!file) return json(res, 404, { error: "Session not found" });
       const parsed = readSession(harness, file);
-      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, plan: parsed.plan || null, events: parsed.events.slice(-80), total: parsed.events.length, draft: buildDraft(parsed.events), userTurns: parsed.events.filter((e) => e.role === "user").length, gen: cached(file) });
+      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, plan: parsed.plan || null, events: parsed.events.slice(-80), total: parsed.events.length, timeline: buildTimeline(parsed.events, { cwd: parsed.cwd }), userTurns: parsed.events.filter((e) => e.role === "user").length, gen: cached(file) });
     }
     if (p === "/api/gen" && req.method === "POST") {
       const file = findFile(B.harness, B.file);
       if (!file) return json(res, 404, { error: "Session not found" });
       return json(res, 200, await generate(B.harness, file, { force: !!B.force }));
+    }
+    // Answers sent from GenUI's reply: their asks clear at once, before the model has read the reply.
+    if (p === "/api/asks" && req.method === "POST") {
+      const file = findFile(B.harness, B.file);
+      if (!file) return json(res, 404, { error: "Session not found" });
+      recordAnswers(file, Array.isArray(B.answers) ? B.answers.slice(0, 40) : []);
+      return json(res, 200, cached(file) || {});
     }
     if (p === "/api/side" && req.method === "POST") {
       const file = B.file ? findFile(B.harness, B.file) : null;
@@ -155,7 +162,7 @@ const server = http.createServer(async (req, res) => {
       const [, id, action] = sm; checkId(id);
       if (!action) return json(res, 200, side.get(id) || {});
       if (action === "msg") return json(res, 200, await side.message(id, String(B.text || "")));
-      if (action === "compose") return json(res, 200, await side.compose(id, Array.isArray(B.known) ? B.known.slice(0, 20) : [], !!B.answerOnly));
+      if (action === "compose") return json(res, 200, await side.compose(id, Array.isArray(B.known) ? B.known.slice(0, 20) : [], !!B.answerOnly, Array.isArray(B.options) ? B.options.slice(0, 8).map(String) : null));
       if (action === "sent") return json(res, 200, side.markSent(id, B.text));
       if (action === "cancel") { side.cancel(id); return json(res, 200, { ok: true }); }
     }
@@ -207,9 +214,18 @@ wss.on("connection", (ws) => {
 const broadcast = (msg, onlyFor) => { const s = JSON.stringify(msg); for (const ws of wss.clients) if (ws.readyState === 1 && (!onlyFor || ws.subs.has(onlyFor))) ws.send(s); };
 live.bus.on("pty", (id, data) => broadcast({ type: "pty", id, data }, id));
 live.bus.on("session", (summary, what) => broadcast({ type: "session", session: summary, what }));
+// A long session's timeline is a few hundred kB, so each session's goes out at most every 2.5 s;
+// the latest state always follows.
+const sentAt = new Map(), later = new Map();
 live.bus.on("transcript", (id, parsed) => {
-  const st = live.get(id)?.status, working = st === "working" || st === "needs";
-  broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30), plan: parsed.plan || null, draft: buildDraft(parsed.events, { working }), userTurns: parsed.events.filter((e) => e.role === "user").length });
+  const out = () => {
+    const st = live.get(id)?.status, working = st === "working" || st === "needs";
+    sentAt.set(id, Date.now()); later.delete(id);
+    broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30), plan: parsed.plan || null, timeline: buildTimeline(parsed.events, { cwd: parsed.cwd || live.get(id)?.cwd, working }), userTurns: parsed.events.filter((e) => e.role === "user").length });
+  };
+  clearTimeout(later.get(id));
+  const wait = 2500 - (Date.now() - (sentAt.get(id) || 0));
+  if (wait <= 0) out(); else later.set(id, setTimeout(out, wait));
   midTurn(id, parsed);
 });
 

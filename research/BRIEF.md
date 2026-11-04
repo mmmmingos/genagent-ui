@@ -18,7 +18,7 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
   - Only work set aside when he changed direction steps off the line, with a × and the reason.
   - It only grows: settled steps are never rewritten.
   - The current step is blue while the agent works, amber when it needs the owner, and grey when it's his turn. Every step can be clicked to show what happened in it.
-  - It can be built by AI or instantly by code (there's a switch today). The research suggests merging the two into one timeline with two layers; this is open.
+  - One timeline, two layers (the AI / Instant switch is gone): code builds it the moment anything happens; AI adds step summaries, changes of direction, dropped work and the asks. Until AI has read a turn, the timeline is code's alone.
 - **Three ways to get help:**
   - **Discuss it** on a question the agent asked: it opens a side chat with its own side agent, with the question pinned on top. "Answer with this" writes the answer into the owner's reply, for him to check before sending.
   - **Ask on the side,** any time: a multi-step side agent about the session, with an optional message back.
@@ -45,7 +45,7 @@ The owner runs many agents at once (7–9 sessions, across businesses and harnes
 4. **Answer them in one go,** sent to the session as one complete message.
 5. **"Since you were away":** steps added since the owner last looked are highlighted.
 
-Prototype: `prototypes/v2/index.html`. The owner liked it, especially how it surfaces older questions he never answered properly. Not yet confirmed by the owner: the exact content of a step's detail, tracking asks over the whole session, the two "Did / Needs" lines, and one combined "needs from you" view across all agents.
+Built in the app on 2026-11-04 from prototype v2 (`prototypes/v2/index.html`); awaiting the owner's review in the real app. Prototype v2: The owner liked it, especially how it surfaces older questions he never answered properly. Not yet confirmed by the owner: the exact content of a step's detail, tracking asks over the whole session, the two "Did / Needs" lines, and one combined "needs from you" view across all agents.
 
 ## Phase 2: the orchestrator agent
 A supervisor agent that creates and manages agents, with each agent working in an isolated branch or worktree. The research's warnings about lead agents: they drift after a handful of reports, start doing the work themselves, and become the review bottleneck. The fix people report is a thin coordinator, plus code that does the merging and ranking.

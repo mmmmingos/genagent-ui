@@ -68,9 +68,9 @@ test("small formatters", () => {
   assert.equal(ago(Date.now() - 5000), "now");
 });
 
-// ---- Growing flow and the agent's own task list ----
-import { emptyTree, applyOps, stepsFromTree, currentLeaf, currentGoal, treeText } from "../server/flowtree.js";
-import { buildDraft, goalLabel } from "../server/flowdraft.js";
+// ---- The timeline and the agent's own task list ----
+import { buildTimeline, goalLabel, messageKind, timelineText } from "../server/timeline.js";
+import { applyNotes, emptyNotes } from "../server/genui.js";
 
 test("Codex update_plan becomes the flow", () => {
   const p = parseCodex([
@@ -87,55 +87,6 @@ test("Claude TodoWrite becomes the flow, latest list wins", () => {
   ]);
   assert.deepEqual(p.plan.map((x) => x.state), ["done", "current", "next"]);
   assert.equal(p.plan.length, 3);
-});
-
-test("flowchart: built with refs, one current step, goals on its path are current", () => {
-  const t = applyOps(emptyTree(), [
-    { op: "add", ref: "g", kind: "goal", label: "Audit the signup fork", state: "current" },
-    { op: "add", parent: "g", kind: "step", label: "Read fork code", state: "done" },
-    { op: "add", parent: "g", kind: "step", label: "Check routing", state: "current" },
-    { op: "add", parent: "g", kind: "step", label: "Visual pass", state: "next" },
-  ]);
-  assert.equal(currentLeaf(t).label, "Check routing");
-  assert.equal(currentGoal(t).label, "Audit the signup fork");
-  assert.deepEqual(stepsFromTree(t).map((s) => s.state), ["done", "current", "next"]);
-});
-
-test("flowchart: done and dropped nodes are never rewritten; a pivot is a new branch", () => {
-  let t = applyOps(emptyTree(), [
-    { op: "add", ref: "g", kind: "goal", label: "Audit the signup fork", state: "current" },
-    { op: "add", parent: "g", label: "Read fork code", state: "done" },
-    { op: "add", parent: "g", label: "Visual pass", state: "current" },
-  ]);
-  const read = t.nodes.find((n) => n.label === "Read fork code"), visual = t.nodes.find((n) => n.label === "Visual pass");
-  // The user changes course: the visual pass is dropped and a new goal branches off.
-  t = applyOps(t, [
-    { op: "rename", id: read.id, label: "Skimmed the code" },       // done: refused
-    { op: "state", id: read.id, state: "next" },                    // done: refused
-    { op: "state", id: visual.id, state: "dropped" },
-    { op: "add", ref: "g2", parent: t.nodes[0].id, kind: "goal", label: "Fix Trustpilot link", state: "current" },
-    { op: "add", parent: "g2", label: "Find the link source", state: "current" },
-  ]);
-  assert.equal(t.nodes.find((n) => n.id === read.id).label, "Read fork code");
-  assert.equal(t.nodes.find((n) => n.id === read.id).state, "done");
-  assert.equal(t.nodes.find((n) => n.id === visual.id).state, "dropped");
-  t = applyOps(t, [{ op: "state", id: visual.id, state: "current" }]); // dropped: refused
-  assert.equal(t.nodes.find((n) => n.id === visual.id).state, "dropped");
-  assert.equal(currentGoal(t).label, "Fix Trustpilot link");
-  assert.equal(t.nodes.filter((n) => n.state === "current" && n.kind === "step").length, 1);
-  assert.match(treeText(t), /- n1 \[goal, current\] Audit the signup fork\n  - n2 \[step, done\] Read fork code/);
-});
-
-test("flowchart: moving on closes the old current step; renames only before a step starts", () => {
-  let t = applyOps(emptyTree(), [
-    { op: "add", ref: "g", kind: "goal", label: "Build the page", state: "current" },
-    { op: "add", parent: "g", label: "Write the hero", state: "current" },
-    { op: "add", parent: "g", label: "Pricing bit", state: "next" },
-  ]);
-  const pricing = t.nodes.find((n) => n.label === "Pricing bit");
-  t = applyOps(t, [{ op: "rename", id: pricing.id, label: "Write the pricing section" }, { op: "state", id: pricing.id, state: "current" }]);
-  assert.equal(t.nodes.find((n) => n.label === "Write the hero").state, "done");
-  assert.equal(currentLeaf(t).label, "Write the pricing section");
 });
 
 test("Codex: a failed turn surfaces its error, and a new turn clears it", () => {
@@ -165,44 +116,6 @@ test("Claude Code's own menus are recognised from the screen", async () => {
   assert.equal(nativeMenu(idle), null);
 });
 
-test("flowchart: a goal whose branches are all finished is done; later goals branch off the trunk", () => {
-  const t = applyOps(emptyTree(), [
-    { op: "add", ref: "g", kind: "goal", label: "Rebrand the navbar", state: "done" },
-    { op: "add", parent: "g", label: "Link navbar", state: "done" },
-    { op: "add", ref: "g2", kind: "goal", label: "Port the latest dev", state: "done" },
-    { op: "add", parent: "g2", label: "Update the icon", state: "done" },
-  ]);
-  const [trunk, , branch] = t.nodes;
-  assert.equal(branch.parent, trunk.id);
-  assert.equal(trunk.state, "done");
-});
-
-test("instant flowchart: goals from your messages, grouped steps from the agent's actions", () => {
-  const ev = [
-    { role: "user", text: "Can you update the navbar to point to juney.ai? Thanks" },
-    { role: "tool", tool: "Read", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
-    { role: "tool", tool: "Grep", input: { pattern: "juney" } },
-    { role: "tool", tool: "Read", input: { file_path: "C:/r/app/FooterV3.tsx" } },
-    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
-    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
-    { role: "assistant", text: "Done. Should I colour it too?" },
-    { role: "user", text: "yes" },                                   // an answer: same goal
-    { role: "tool", tool: "Bash", input: { command: "npm test && npm run lint" } },
-    { role: "assistant", text: "Tests pass. Want me to fix the footer too?" },
-    { role: "user", text: "Now fix the footer link as well." },     // a new request, even after a question: a branch
-    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/FooterV3.tsx" } },
-  ];
-  const t = buildDraft(ev, { working: true });
-  const goals = t.nodes.filter((n) => n.kind === "goal");
-  assert.deepEqual(goals.map((g) => g.label), ["Update the navbar to point to juney.ai", "Fix the footer link as well"]);
-  assert.equal(goals[1].parent, goals[0].id);
-  const steps = t.nodes.filter((n) => n.parent === goals[0].id && n.kind === "step").map((n) => n.label + (n.note ? " " + n.note : ""));
-  assert.deepEqual(steps, ["Read 3 files", "Edit NavbarV3.tsx ×2", "Run npm test"]);
-  const cur = t.nodes.filter((n) => n.state === "current");
-  assert.deepEqual(cur.map((n) => n.label), ["Update the navbar to point to juney.ai", "Fix the footer link as well", "Edit FooterV3.tsx"]);
-  assert.equal(goalLabel("I want you to rename the button. Then ship it"), "Rename the button");
-});
-
 test("Claude: queued messages count as the user's; TaskCreate/TaskUpdate lists become the flow", () => {
   const p = parseClaude([
     { type: "user", message: { role: "user", content: "Build the page" } },
@@ -218,13 +131,101 @@ test("Claude: queued messages count as the user's; TaskCreate/TaskUpdate lists b
   assert.deepEqual(p.events.filter((e) => e.role === "user").map((e) => e.text), ["Build the page", "Also add a footer"]);
 });
 
-test("instant flowchart: Esc markers are noise; a side chat's answer continues the goal", () => {
-  const p = parseClaude([
-    { type: "user", message: { role: "user", content: "Pick an audience for the page" } },
-    { type: "user", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] } },
-    { type: "user", message: { role: "user", content: "About your question \"Which audience?\":\n\nFounders." } },
-    { type: "user", message: { role: "user", content: "Now write the tagline." } },
+test("timeline: your messages start sections, the agent's actions become grouped steps with what they touched", () => {
+  const ev = [
+    { role: "user", text: "Can you update the navbar to point to juney.ai? Thanks", t: "2026-11-04T01:00:00Z" },
+    { role: "tool", tool: "Read", id: "r1", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
+    { role: "tool", tool: "Grep", id: "g1", input: { pattern: "juney" } },
+    { role: "tool_result", id: "g1", text: "2 matches" },
+    { role: "tool", tool: "Read", input: { file_path: "C:/r/app/FooterV3.tsx" } },
+    { role: "tool", tool: "Edit", id: "e1", input: { file_path: "C:/r/app/NavbarV3.tsx", old_string: "a\nb", new_string: "a\nb\nc" } },
+    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/NavbarV3.tsx", old_string: "x", new_string: "y" } },
+    { role: "assistant", text: "Done. Should I colour it too?" },
+    { role: "user", text: "yes" },                                   // an answer: same section
+    { role: "tool", tool: "Bash", id: "b1", input: { command: "cd C:/r && npm test && npm run lint" } },
+    { role: "tool_result", id: "b1", text: "42 passed\nok" },
+    { role: "assistant", text: "Tests pass." },
+    { role: "user", text: "Now fix the footer link as well." },     // a new request
+    { role: "tool", tool: "Edit", id: "e2", input: { file_path: "C:/r/app/FooterV3.tsx", old_string: "", new_string: "z" } },
+  ];
+  const tl = buildTimeline(ev, { cwd: "C:/r", working: true });
+  assert.deepEqual(tl.sections.map((s) => [s.kind, s.label]), [["start", "Update the navbar to point to juney.ai"], ["new", "Fix the footer link as well"]]);
+  const [a] = tl.sections;
+  assert.deepEqual(a.steps.map((s) => s.label), ["Read 2 files", "Edit NavbarV3.tsx ×2", "Asks: Should I colour it too?", "You replied: yes", "Run npm test"]);
+  assert.deepEqual(a.steps[0].files.map((f) => f.f), ["app/NavbarV3.tsx", "app/FooterV3.tsx"]);
+  assert.deepEqual(a.steps[1].files, [{ f: "app/NavbarV3.tsx", add: 4, del: 3 }]);
+  assert.deepEqual(a.steps[4].cmds, [{ c: "npm test", r: "42 passed · ok", ok: true }]);
+  assert.equal(a.steps[4].said, "Tests pass.");
+  assert.equal(a.t, Date.parse("2026-11-04T01:00:00Z"));
+  // Ids come from the conversation, so they stay put as it grows.
+  assert.deepEqual(buildTimeline(ev.slice(0, 8)).sections[0].steps.slice(0, 2).map((s) => s.id), ["tr1", "te1"]);
+  assert.equal(goalLabel("I want you to rename the button. Then ship it"), "Rename the button");
+  assert.match(timelineText(tl), /\[te1\] Edit NavbarV3\.tsx ×2 \(app\/NavbarV3\.tsx \+4 -3\)/);
+});
+
+test("timeline: a change of direction, a menu question and its answer, Esc and the answer that follows", () => {
+  assert.equal(messageKind("no, a switch like the one in settings"), "turn");
+  assert.equal(messageKind("no"), "answer");
+  assert.equal(messageKind("ok, make it teal"), "answer");
+  assert.equal(messageKind("About your questions:\n1. Logo: Dark."), "answer");
+  assert.equal(messageKind("Also add a monthly toggle"), "new");
+  const ask = (id) => ({ role: "tool", tool: "AskUserQuestion", id, input: { questions: [{ question: "Which logo?", header: "Logo", options: [{ label: "Dark" }, { label: "Light", description: "for the footer" }] }] } });
+  const tl = buildTimeline([
+    { role: "user", text: "Make a logo" }, ask("q1"),
+    { role: "tool_result", id: "q1", text: 'User has answered your questions: "Which logo?"="Dark". You can now continue' },
+    ask("q2"), { role: "tool_result", id: "q2", error: true, text: "The user doesn't want to proceed with this tool use." },
+    { role: "user", text: "About your question:\nLogo: Light." },
+    ask("q3"),
   ]);
-  const goals = buildDraft(p.events).nodes.filter((n) => n.kind === "goal").map((n) => n.label);
-  assert.deepEqual(goals, ["Pick an audience for the page", "Write the tagline"]);
+  const st = tl.sections[0].steps;
+  assert.deepEqual(st[0].ask.answers, [{ q: "Which logo?", a: "Dark" }]);
+  assert.equal(st[1].ask.cancelled, true);
+  assert.equal(st[1].ask.reply, "About your question: Logo: Light.");
+  assert.equal(st[3].ask.answered, false);
+  assert.deepEqual(st[3].ask.qs[0].options[1], { label: "Light", detail: "for the footer" });
+});
+
+test("timeline: a turn that ends on a question gets its own Asks step; mid-turn text isn't final", () => {
+  const ev = [{ role: "user", text: "Write the FAQ" }, { role: "tool", tool: "Write", id: "w", input: { file_path: "faq.md", content: "a\nb" } }, { role: "assistant", text: "Done. Remove the Enterprise entries? And push to preview?" }];
+  const ended = buildTimeline(ev).sections[0].steps;
+  assert.deepEqual(ended.map((s) => s.kind), ["edit", "asktext"]);
+  assert.equal(ended[1].label, "Asks 2 questions");
+  assert.equal(ended[0].said, "");
+  const working = buildTimeline(ev, { working: true }).sections[0].steps;
+  assert.deepEqual(working.map((s) => s.kind), ["edit"]);
+});
+
+test("AI notes: only grow, only for ids the timeline has; asks stay open until answered", () => {
+  const tl = buildTimeline([
+    { role: "user", text: "Add a yearly toggle" }, { role: "tool", tool: "Edit", id: "e", input: { file_path: "a.tsx", old_string: "", new_string: "x" } },
+    { role: "assistant", text: "I used 20% off for now. Tell me if it should be different." },
+    { role: "user", text: "Make the FAQ match" }, { role: "tool", tool: "Read", id: "r", input: { file_path: "faq.md" } },
+  ]);
+  let n = applyNotes(emptyNotes(), {
+    sections: [{ id: "u0", kind: "start" }, { id: "nope", kind: "turn" }],
+    steps: [{ id: "te", summary: "Added the switch.", label: "Ignored: not vague" }, { id: "ghost", summary: "x" }],
+    dropped: [], asks: [{ op: "add", step: "te", key: "Yearly discount", q: "What yearly discount should it show?", options: [{ label: "20% off" }, { label: "2 months free", recommended: true }] }, { op: "add", step: "ghost", q: "Hallucinated?" }],
+  }, tl);
+  assert.deepEqual(Object.keys(n.sections), ["u0"]);
+  assert.deepEqual(n.steps, { te: { summary: "Added the switch." } });
+  assert.equal(n.asks.length, 1);
+  assert.equal(n.asks[0].state, "open");
+  // A later pass can't rewrite a note, and mid-turn it leaves the asks alone.
+  n = applyNotes(n, { steps: [{ id: "te", summary: "Rewritten" }], asks: [{ op: "answer", id: "k1", answer: "x" }] }, tl, { midTurn: true });
+  assert.equal(n.steps.te.summary, "Added the switch.");
+  assert.equal(n.asks[0].state, "open");
+  n = applyNotes(n, { asks: [{ op: "answer", id: "k1", answer: "2 months free" }] }, tl);
+  assert.equal(n.asks[0].state, "answered");
+  n = applyNotes(n, { asks: [{ op: "moot", id: "k1" }] }, tl);
+  assert.equal(n.asks[0].state, "answered");
+  assert.equal(n.asks[0].answer, "2 months free");
+});
+
+test("AI notes: a question already asked, even answered, is never added again", () => {
+  const tl = buildTimeline([{ role: "user", text: "Price it" }, { role: "assistant", text: "Which discount: 20% off or 2 months free?" }]);
+  const step = tl.sections[0].steps[0].id;
+  let n = applyNotes(emptyNotes(), { asks: [{ op: "add", step, key: "Yearly discount", q: "Which discount should we show?" }] }, tl);
+  n = applyNotes(n, { asks: [{ op: "answer", id: "k1", answer: "20% off" }] }, tl);
+  n = applyNotes(n, { asks: [{ op: "add", step, key: "yearly discount", q: "What yearly discount should be offered?" }] }, tl);
+  assert.equal(n.asks.length, 1);
 });

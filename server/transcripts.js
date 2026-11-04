@@ -66,8 +66,10 @@ export function parseClaude(lines) {
     const c = l.message && l.message.content;
     if (l.type === "user" && !l.isMeta) {
       if (Array.isArray(c) && c.some((b) => b.type === "tool_result")) {
-        c.filter((b) => b.type === "tool_result").forEach((b) => answered.add(b.tool_use_id));
-        events.push({ role: "tool_result", text: clip(typeof c[0].content === "string" ? c[0].content : claudeText(c[0].content), 400), t: l.timestamp });
+        for (const b of c.filter((b) => b.type === "tool_result")) {
+          answered.add(b.tool_use_id);
+          events.push({ role: "tool_result", id: b.tool_use_id, error: !!b.is_error, text: clip(typeof b.content === "string" ? b.content : claudeText(b.content), 400), t: l.timestamp });
+        }
         continue;
       }
       // Long pastes are recorded wrapped in <pasted_content>; show what was actually typed.
@@ -139,10 +141,10 @@ export function parseCodex(lines) {
       if (p.type === "function_call" || p.type === "custom_tool_call" || p.type === "local_shell_call") {
         let input = p.arguments || p.input || p.action;
         try { if (typeof input === "string") input = JSON.parse(input); } catch {}
-        events.push({ role: "tool", tool: p.name || p.type, input, t: l.timestamp });
+        events.push({ role: "tool", tool: p.name || p.type, input, id: p.call_id || undefined, t: l.timestamp });
         if (p.name === "update_plan" && input && typeof input === "object") plan = toPlan(input.plan) || plan;
       }
-      if (p.type === "function_call_output") events.push({ role: "tool_result", text: clip(typeof p.output === "string" ? p.output : JSON.stringify(p.output), 400), t: l.timestamp });
+      if (p.type === "function_call_output" || p.type === "custom_tool_call_output") events.push({ role: "tool_result", id: p.call_id || undefined, text: clip(typeof p.output === "string" ? p.output : JSON.stringify(p.output), 400), t: l.timestamp });
     }
     if (l.type === "turn_context" && p.model) model = p.model;
   }

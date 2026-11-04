@@ -348,7 +348,8 @@ export function onHook(id, ev) {
   if (name === "PostToolUse" && ev.tool_name === "AskUserQuestion") { s.ask = null; s.status = "working"; }
   // Cancelled with Esc (or "Chat about this"): the question is gone and the prompt is yours.
   if (name === "PostToolUseFailure" && ev.tool_name === "AskUserQuestion") { s.ask = null; s.status = "idle"; changed(s, "turn-end"); return; }
-  if (name === "PermissionRequest") { s.perm = { id: crypto.randomUUID(), tool: ev.tool_name, input: ev.tool_input }; s.status = "needs"; changed(s, "permission"); sniffScreen(s); return; }
+  // Claude Code asks permission for its own question menu too; that is the question, not an approval.
+  if (name === "PermissionRequest" && ev.tool_name !== "AskUserQuestion") { s.perm = { id: crypto.randomUUID(), tool: ev.tool_name, input: ev.tool_input }; s.status = "needs"; changed(s, "permission"); sniffScreen(s); return; }
   if (name === "PreToolUse" && s.status !== "working" && !s.native) s.status = "working";
   changed(s);
 }
