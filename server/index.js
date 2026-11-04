@@ -56,7 +56,10 @@ let savedCache = { at: 0, items: [] };
 function saved(force) {
   if (force || Date.now() - savedCache.at > 15000) {
     const forks = side.forkIds();
-    savedCache = { at: Date.now(), items: listSaved({ limit: 400 }).filter((s) => !forks.has(s.id)) };
+    // GENUI_SAVED_ROOT (demos, tests): list only sessions from inside that folder.
+    const root = process.env.GENUI_SAVED_ROOT ? path.resolve(process.env.GENUI_SAVED_ROOT).toLowerCase() : "";
+    const inRoot = (cwd) => !root || (!!cwd && (path.resolve(cwd).toLowerCase() + path.sep).startsWith(root + path.sep));
+    savedCache = { at: Date.now(), items: listSaved({ limit: 400 }).filter((s) => !forks.has(s.id) && inRoot(s.cwd)) };
   }
   return savedCache.items;
 }

@@ -47,7 +47,7 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 | `prototypes/` | The earlier click-through mockups |
 | `tests/` | `npm test` (unit), `npm run test:e2e` (drives a real Claude Code session in `sandbox/`) and `npm run test:ui` (clicks through the app in headless Chrome, on its own port and data folder: the agent view and catching up, New goal) |
 
-App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-agent`.
+App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-agent`. For tests and demos, `GENUI_PORT` runs a second copy on another port, `GENUI_DATA` gives it its own data folder, and `GENUI_SAVED_ROOT` lists only the saved sessions from inside one folder (so a demo never shows your real ones).
 
 ## How answering works
 
