@@ -83,11 +83,16 @@ try {
   check("composed answer", await waitFor(`(document.getElementById('sp-composed')||{}).value?.length > 3`, 180000));
   await sleep(300); await shot("side-composed");
   const answer = await ev(`document.getElementById('sp-composed').value`);
+  // Claude Code's own menu is still open: the side chat says so. Press Esc in the real terminal, then send.
+  check("the side chat says Claude's question is still open", await ev(`!!document.querySelector('#railpane .sp-hint')`));
+  await ev(`document.querySelector('.xterm-helper-textarea').focus()`);
+  for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  check("Esc in Claude Code's menu frees the prompt", await waitFor(`!document.querySelector('#railpane .sp-hint')`, 20000));
   await clickSel("[data-act=side-use-composed]");
   check("side chat closes back to the plan", await waitFor(`!document.querySelector('#railpane .sp-head') && !!document.querySelector('#railpane .pl-scroll')`, 30000));
   let got = false;
   for (let i = 0; i < 120 && !got; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); got = !!(cur.file && fs.existsSync(cur.file) && /ANSWER=/.test(fs.readFileSync(cur.file, "utf8"))); }
-  check(`Claude received the side chat's answer through its own menu ("${String(answer).slice(0, 50)}")`, got);
+  check(`Claude received the side chat's answer as your next message ("${String(answer).slice(0, 50)}")`, got);
   await sleep(4000); await shot("after-answer");
   // Orchestrator lists the running agent with its progress.
   await clickSel("#side [data-act=go][data-page=overview]");

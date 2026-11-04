@@ -5,7 +5,7 @@ import path from "node:path";
 import { STORES } from "./config.js";
 
 const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
-const isNoise = (t) => !t || /^\s*<[a-z_-]+>/i.test(t) || /^\s*<(system-reminder|user_info|environment_context|permissions|skills_instructions|collaboration_mode|local-command|command-|user_instructions)/i.test(t) || /^Caveat: The messages below/i.test(t) || /^# AGENTS\.md instructions for /.test(t);
+const isNoise = (t) => !t || /^\s*<[a-z_-]+>/i.test(t) || /^\s*<(system-reminder|user_info|environment_context|permissions|skills_instructions|collaboration_mode|local-command|command-|user_instructions)/i.test(t) || /^Caveat: The messages below/i.test(t) || /^# AGENTS\.md instructions for /.test(t) || /^\[Request interrupted by user/.test(t);
 
 function readLines(file) {
   let raw;

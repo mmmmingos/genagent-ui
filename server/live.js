@@ -24,7 +24,7 @@ function writeHookSettings() {
   const h = (matcher) => [{ matcher, hooks: [{ type: "command", command: cmd }] }];
   const s = { hooks: {
     SessionStart: h(""), UserPromptSubmit: h(""), Stop: h(""), Notification: h(""),
-    PreToolUse: h("AskUserQuestion"), PostToolUse: h("AskUserQuestion"), PermissionRequest: h(""), PreCompact: h(""),
+    PreToolUse: h("AskUserQuestion"), PostToolUse: h("AskUserQuestion"), PostToolUseFailure: h("AskUserQuestion"), PermissionRequest: h(""), PreCompact: h(""),
   } };
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2));
 }
@@ -48,10 +48,11 @@ export function summary(s) {
   return {
     id: s.id, harness: s.harness, label: HARNESSES[s.harness].label, cwd: s.cwd, name: s.name, status: s.status,
     file: s.file, createdAt: s.createdAt, alive: s.alive, exitCode: s.exitCode, origin: s.origin, goalHint: s.goalHint, turnError: s.turnError || null,
-    // What Claude Code's own menu in the terminal is waiting on: a question (with its questions) or an approval.
+    // What Claude Code's own menu is waiting on, from its hooks: a question (with its questions) or an
+    // approval. The screen (native) only tells us sooner when a menu has closed.
     native: s.native ? s.native.kind : null,
-    pendingAsk: s.ask && s.native?.kind === "ask" ? { id: s.ask.id, questions: s.ask.questions } : null,
-    pendingPermission: s.perm && s.native?.kind === "permission" ? { id: s.perm.id, tool: s.perm.tool, input: s.perm.input } : null,
+    pendingAsk: s.ask ? { id: s.ask.id, questions: s.ask.questions } : null,
+    pendingPermission: s.perm ? { id: s.perm.id, tool: s.perm.tool, input: s.perm.input } : null,
     terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity,
   };
 }
@@ -344,41 +345,11 @@ export function onHook(id, ev) {
   if (name === "Notification" && /idle_prompt/i.test(ev.notification_type || ev.message || "") && s.status === "working") { s.status = "idle"; changed(s, "turn-end"); return; }
   if (name === "PreToolUse" && ev.tool_name === "AskUserQuestion") { s.ask = { id: crypto.randomUUID(), questions: (ev.tool_input && ev.tool_input.questions) || [] }; s.status = "needs"; changed(s, "ask"); sniffScreen(s); return; }
   if (name === "PostToolUse" && ev.tool_name === "AskUserQuestion") { s.ask = null; s.status = "working"; }
+  // Cancelled with Esc (or "Chat about this"): the question is gone and the prompt is yours.
+  if (name === "PostToolUseFailure" && ev.tool_name === "AskUserQuestion") { s.ask = null; s.status = "idle"; changed(s, "turn-end"); return; }
   if (name === "PermissionRequest") { s.perm = { id: crypto.randomUUID(), tool: ev.tool_name, input: ev.tool_input }; s.status = "needs"; changed(s, "permission"); sniffScreen(s); return; }
   if (name === "PreToolUse" && s.status !== "working" && !s.native) s.status = "working";
   changed(s);
-}
-
-// Put an answer worked out in a side chat into Claude Code's open question menu, through its own
-// "Type something" option, exactly as if typed there. qi picks the question in a multi-question menu.
-export async function typeAnswer(id, qi, text) {
-  const s = sessions.get(id);
-  if (!s?.alive || s.native?.kind !== "ask" || !s.ask) throw new Error("The question isn't open in the terminal any more");
-  const qs = s.ask.questions, q = qs[qi];
-  if (!q) throw new Error("No such question");
-  const body = String(text).replace(/\r\n?/g, "\n").replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f]/g, "").trim();
-  if (!body) throw new Error("Nothing to send");
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const key = async (k, ms = 180) => { s.pty.write(k); await sleep(ms); };
-  const flat = () => screenRows(s).join("\n").replace(/\s+/g, " ");
-  const shown = () => flat().includes(q.question.replace(/\s+/g, " ").slice(0, 60));
-  // Several questions show one at a time, as tabs: move to the right one.
-  for (let n = 0; n < qs.length + 1 && qs.length > 1 && !shown(); n++) await key("\x1b[C", 250);
-  if (!shown()) throw new Error("Couldn't find that question in the terminal");
-  const typeRow = (q.options || []).length + 1;
-  if (q.multiSelect) {
-    // Checkbox lists toggle on a number, so walk the cursor down to "Type something" instead.
-    const rows = screenRows(s), cur = rows.map((r) => /^\s*❯\s*(\d+)\./.exec(r)).find(Boolean);
-    const from = cur ? Number(cur[1]) : 1;
-    for (let n = from; n < typeRow; n++) await key("\x1b[B");
-    for (let n = from; n > typeRow; n--) await key("\x1b[A");
-  } else await key(String(typeRow), 250);
-  await key(`\x1b[200~${body}\x1b[201~`, 450);
-  if (q.multiSelect) await key("\x1b[B", 250);
-  await key("\r", 600);
-  // After the last question Claude Code shows a review; submit it when every question has an answer.
-  const review = flat();
-  if (/Ready to submit your answers\?/.test(review) && (review.match(/→/g) || []).length >= qs.length) await key("\r", 300);
 }
 
 // Folder-trust and similar terminal prompts: the safe default needs a keypress the user chooses.

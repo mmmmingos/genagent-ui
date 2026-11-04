@@ -126,8 +126,6 @@ const server = http.createServer(async (req, res) => {
     if (m) {
       const [, id, action] = m; checkId(id);
       if (action === "send") { live.send(id, String(B.text || "")); return json(res, 200, { ok: true }); }
-      // An answer from a side chat, typed into Claude Code's open question menu.
-      if (action === "answer") { await live.typeAnswer(id, Number(B.qi) || 0, String(B.text || "")); return json(res, 200, { ok: true }); }
       if (action === "terminal") { live.answerTerminal(id, B.choice); return json(res, 200, { ok: true }); }
       if (action === "interrupt") { live.interrupt(id, B.key === "ctrlc" ? "\x03" : "\x1b"); return json(res, 200, { ok: true }); }
       if (action === "stop") { live.stop(id); return json(res, 200, { ok: true }); }

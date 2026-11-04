@@ -9,7 +9,8 @@ const base = (p) => String(p || "").split(/[\\/]/).filter(Boolean).pop() || "";
 // A short reply that answers or approves ("yes", "ok, make it teal", "go ahead") continues the current
 // goal; anything else is a new request, even right after the agent asked "Want me to …?".
 const CONTINUE = /^(y|yes|yep|yeah|no|nope|ok|okay|sure|go|go ahead|do it|continue|carry on|proceed|sounds good|looks good|lgtm|approved?|thanks?|thank you|perfect|great|nice|please do|keep going|next)\b/i;
-const continues = (text) => CONTINUE.test(text) && text.length <= 60;
+// A side chat's answer to the agent's question ("About your question …") continues it too.
+const continues = (text) => (CONTINUE.test(text) && text.length <= 60) || /^about your question\b/i.test(text);
 
 export function goalLabel(text) {
   let t = String(text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();

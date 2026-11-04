@@ -217,3 +217,14 @@ test("Claude: queued messages count as the user's; TaskCreate/TaskUpdate lists b
   assert.deepEqual(p.plan, [{ label: "Write hero", state: "done" }, { label: "Write FAQ", state: "current" }]);
   assert.deepEqual(p.events.filter((e) => e.role === "user").map((e) => e.text), ["Build the page", "Also add a footer"]);
 });
+
+test("instant flowchart: Esc markers are noise; a side chat's answer continues the goal", () => {
+  const p = parseClaude([
+    { type: "user", message: { role: "user", content: "Pick an audience for the page" } },
+    { type: "user", message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] } },
+    { type: "user", message: { role: "user", content: "About your question \"Which audience?\":\n\nFounders." } },
+    { type: "user", message: { role: "user", content: "Now write the tagline." } },
+  ]);
+  const goals = buildDraft(p.events).nodes.filter((n) => n.kind === "goal").map((n) => n.label);
+  assert.deepEqual(goals, ["Pick an audience for the page", "Write the tagline"]);
+});

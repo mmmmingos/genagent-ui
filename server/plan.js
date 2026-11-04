@@ -58,6 +58,6 @@ export function stepPrompt(p, index, answers = {}) {
   ];
   const a = Object.entries(answers).filter(([, v]) => v);
   if (a.length) lines.push(`Answers the user has already given:\n${a.map(([q, v]) => `- ${q}: ${v}`).join("\n")}`);
-  lines.push(`Do only your step. When you need a decision from the user, ask with the AskUserQuestion tool (short, with options). When your step is done, say so in one line and stop.`);
+  lines.push(`Do only your step. When your step is done, say so in one line and stop.`);
   return lines.join("\n\n");
 }

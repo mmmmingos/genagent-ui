@@ -680,8 +680,9 @@ function sideChatHTML(sd) {
     </div>
     <div class="sp-foot">
       ${sd.composing ? `
+        ${sd.extra.ask && mainRef && mainRef.pendingAsk ? `<div class="sp-hint">${icon("alert", "s14")}<span>${esc(S.labels[sd.ref.harness] || "Claude Code")}'s question is still open. Answer it there, or press Esc (or pick “Chat about this”), and this goes in as your next message.</span></div>` : ""}
         <div class="sp-composed"><div class="h"><span>${sd.extra.ask ? "Answer to its question" : forCard ? "Answer for the card" : "Message to send"}</span><span class="num">~${kt(receives)} tokens</span></div><textarea id="sp-composed" data-keep data-draft="composed:${esc(d.id)}" aria-label="Composed answer"></textarea></div>
-        <div class="sp-actions"><button class="btn btn-text" data-act="side-back">Keep discussing</button><span class="sp"></span>${forCard ? `<button class="btn btn-tint" data-act="side-use-composed" ${S.inflight.has("side-use") ? "disabled" : ""}>${sd.extra.ask ? "Send answer" : "Use as the answer"}</button>` : live ? `<button class="btn btn-tint" data-act="side-send">Send to ${esc(S.labels[sd.ref.harness])}</button>` : `<button class="btn btn-tint" data-act="side-copy">${icon("copy")}Copy</button>`}</div>`
+        <div class="sp-actions"><button class="btn btn-text" data-act="side-back">Keep discussing</button><span class="sp"></span>${forCard ? `<button class="btn btn-tint" data-act="side-use-composed" ${S.inflight.has("side-use") ? "disabled" : ""}>${sd.extra.ask ? `Send to ${esc(S.labels[sd.ref.harness] || "Claude Code")}` : "Use as the answer"}</button>` : live ? `<button class="btn btn-tint" data-act="side-send">Send to ${esc(S.labels[sd.ref.harness])}</button>` : `<button class="btn btn-tint" data-act="side-copy">${icon("copy")}Copy</button>`}</div>`
       : `
         <div class="sp-compose"><textarea id="sp-in" data-keep data-draft="side:${esc(d ? d.id : "new")}" rows="1" placeholder="Ask on the side" aria-label="Message the side agent"></textarea><button class="send sm" data-act="side-msg" aria-label="Send" ${busy || !d ? "disabled" : ""}>${icon("up")}</button></div>
         <div class="sp-actions"><span class="sp"></span><button class="btn btn-tint" data-act="side-compose" ${busy || !d || !(d.msgs || []).length ? "disabled" : ""} title="Write the one message to send back, from this discussion">Compose answer</button></div>`}
@@ -830,7 +831,7 @@ document.addEventListener("click", async (e) => {
       case "flow-mode": S.flowMode = el.dataset.mode; try { localStorage.setItem("genui.flow", S.flowMode); } catch {} render(); break;
       case "tree-fold": { const k = el.dataset.k; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
       // A question in Claude Code's own menu: talk it through on the side; the answer goes back into the menu.
-      case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: ref.l.pendingAsk.id, qi }); break; }
+      case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: ref.l.pendingAsk.id, qi, question: x.question }); break; }
       // Generated cards
       case "pick": pickOption(ref, k, +el.dataset.i, +el.dataset.j); break;
       case "multi-done": { const c = genFor(ref.file).cards[+el.dataset.i]; setAnswer(k, [...(S.picks.get(k) || [])].map((j) => c.options[j].label).join(", ")); break; }
@@ -1004,10 +1005,12 @@ async function sideUse() {
   const text = ($("#sp-composed")?.value || sd.composed || "").trim(); if (!text) return;
   if (sd.extra.cardKey) { S.answers.set(sd.extra.cardKey, text); S.reopen.delete(sd.extra.cardKey); }
   else if (sd.extra.ask) {
-    // The answer goes into Claude Code's own question menu, as if typed there.
+    // The answer goes in as your next message, typed into Claude Code's prompt, once its question menu
+    // is closed (you answered there, pressed Esc, or picked "Chat about this"). We never press keys in its menus.
     const l = S.live.get(sd.ref.id);
-    if (!l || !l.pendingAsk || l.pendingAsk.id !== sd.extra.ask) { toast("That question was already answered in the terminal", "", "fail"); return; }
-    await guarded("side-use", () => api(`/api/sessions/${sd.ref.id}/answer`, { qi: sd.extra.qi || 0, text }));
+    if (l && l.pendingAsk && !S.armed?.act?.startsWith("send-anyway:")) { armed("send-anyway", () => {}); toast("Claude Code's question is still open", "Answer it there, or press Esc (or pick \u201cChat about this\u201d), then send. Click again to send anyway.", "needs"); return; }
+    const q = sd.extra.question ? `About your question "${sd.extra.question}":\n\n` : "";
+    await guarded("side-use", () => api(`/api/sessions/${sd.ref.id}/send`, { text: q + text }));
   }
   api(`/api/side/${sd.data.id}/sent`, { text }).catch(() => {});
   S.sideOpen = false; S.sides.delete(refKey(current())); render();

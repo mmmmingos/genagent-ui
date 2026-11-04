@@ -1,6 +1,8 @@
 # GenUI Agent
 
-A visual layer over your real agent sessions. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows where the plan stands: the step it's on, what it's doing right now, and, in amber, when it needs you. When you're not sure how to answer one of its questions, **Discuss it** opens a side chat that knows the session; the answer you settle on goes back into the agent's own menu, so the main session's context only grows by that answer.
+A visual layer over your real agent sessions. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows where the plan stands: the step it's on, what it's doing right now, and, in amber, when it needs you. When you're not sure how to answer one of its questions, **Discuss it** opens a side chat that knows the session; the answer you settle on goes in as your next message, so the main session's context only grows by that answer.
+
+GenUI is a wrapper: it runs your installed harness unmodified, so harness updates arrive by themselves. It watches through official interfaces where they exist and never drives the harness's own menus (see [How it stays a wrapper](#how-it-stays-a-wrapper)).
 
 ## Start it
 
@@ -15,10 +17,10 @@ Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already s
 
 ## What it does
 
-- **Agent view**: a session started from the app is its real CLI in a terminal, with the plan rail beside it. Its questions and approvals stay in the harness's own menus, answered in the terminal as usual. Claude Code sessions get GenUI's hooks for that session only; they only report (what was asked, what needs approval), and the app reads the terminal's screen to know when a menu is open. The current step is blue while the agent works, amber when it needs you, grey when it's your turn. Click the amber step to see what it needs.
+- **Agent view**: a session started from the app is its real CLI in a terminal, with the plan rail beside it. Its questions and approvals stay in the harness's own menus, answered in the terminal as usual. Claude Code sessions get GenUI's hooks for that session only; they only report (what was asked, what needs approval, when a question is answered or cancelled, when a turn ends). The current step is blue while the agent works, amber when it needs you, grey when it's your turn. Click the amber step to see what it needs.
 - **Saved sessions**: everything in `~/.claude/projects`, `~/.codex/sessions` and `~/.grok/sessions`, read-only. Open one to see its generated goal and flow. Resuming one is a deliberate two-step action.
 - **Flowchart**: two sources you can switch between in the rail. **Instant** is built by code from the transcript as it happens (`server/flowdraft.js`): each message you send that asks for something is a goal (the first is the trunk, later ones branch off it; a short "yes / go ahead" continues the current one) and the agent's actions become steps ("Read 4 files", "Edit NavbarV3.tsx ×3", "Run npm test"). **AI**: the app asks Claude (Sonnet, tools off) to read the conversation and keep a flowchart of it as it unfolds: the first goal is the trunk, every new request or change of direction branches off it, and the agent's work sits under each as steps. It only grows: each update reads what's new and returns changes to the tree, and finished or dropped steps are never reworded or removed (rules in `server/flowtree.js`), so you can follow a long conversation from start to now. Finished branches fold to one line. It refreshes when a turn ends and, during long turns, every few tool calls or about once a minute (`GENUI_MIDTURN_TOOLS`, default 6; `GENUI_MIDTURN_SEC`, default 60). The same call reads any questions in the agent's last reply as cards from a fixed kit (choice, approval, answer, teammate, checklist, note); answers go to the agent as one message. Claude Code itself runs unchanged: the app only reads its transcript.
-- **Side discussion**: for a Claude Code session it's a real fork (`claude --resume <id> --fork-session`) with read-only tools, so it knows the whole session and the original is untouched. For Codex and Grok sessions it's a Claude Code session that reads that transcript. *Compose answer* writes one complete reply. For a question in Claude Code's menu, *Send answer* types it into the menu's own "Type something" option; otherwise *Send* types it into the session.
+- **Side discussion**: for a Claude Code session it's a real fork (`claude --resume <id> --fork-session`) with read-only tools, so it knows the whole session and the original is untouched. For Codex and Grok sessions it's a Claude Code session that reads that transcript. *Compose answer* writes one complete reply, and *Send* types it into the session as your next message. For a question that is still open in Claude Code's menu, answer it there or press Esc (or pick "Chat about this") first; the side chat says so until the prompt is free.
 - **Research**: `research/genui-landscape.md` surveys how other generative-UI systems work and what that means here.
 - **Orchestrator**: the agents started here, running ones first, each with its step and what it's doing or needs; then plans and the agents that ended. **New goal** plans a goal into steps (Opus, read-only look at the folder), assigns a harness to each, predicts the questions each step will need, and starts a fresh worker per step with the plan and your early answers.
 
@@ -43,12 +45,26 @@ App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-
 
 ## How answering works
 
-- **The agent's own questions** (Claude Code's AskUserQuestion) and **approvals** appear in its terminal, as always; pick there. The amber step shows the question and its options with **Discuss it**; the side chat's answer goes into the menu as if you'd typed it.
+- **The agent's own questions** (Claude Code's AskUserQuestion) and **approvals** appear in its terminal, as always; pick there. The amber step shows the question and its options with **Discuss it**; once you've pressed Esc in the menu, the side chat's answer goes in as your next message.
 - **Questions in its reply** are ones GenUI Agent read from the agent's last message, shown as cards under the amber step. Answers are collected (each card shows "not sent yet") and go together as one message with **Send N answers**. Answers you haven't sent survive the agent's next turn.
 - **Discuss it** on a card opens a side chat about it in the rail. **Use as the answer** puts the composed answer into the card; nothing reaches the session until you send.
 - **New session**: type your first message and press Enter; the harness starts in that folder with exactly that message, as in your terminal. **Plan it first** is optional: it breaks a bigger goal into steps, each run by its own agent.
 - **Side chat** (the button at the bottom of the rail, or **Discuss it** on a question) opens a separate agent that knows the session; nothing reaches the session unless you send it.
 - When the window isn't in front, the title shows `(N) GenUI Agent` and Windows notifications appear for questions, approvals and finished turns.
+
+## How it stays a wrapper
+
+GenUI launches your installed `claude` (or `codex`, `grok`) unchanged; it adds only a per-session settings file with its hooks. What it relies on, and how likely a harness update is to affect it:
+
+| What | How | If the harness changes |
+|---|---|---|
+| Question asked / answered / cancelled, approval needed, turn ended | Claude Code [hooks](https://code.claude.com/docs/en/hooks) (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`, …) | Official and documented |
+| Side discussions | `claude --resume <id> --fork-session` | Official |
+| Putting an answer in | Typing it into the terminal GenUI owns, as your next message | Plain keyboard input |
+| The flowchart's content | Reading the saved transcript (`~/.claude/projects/…jsonl`) | Not a documented format: read defensively, so an unknown line is skipped rather than breaking anything |
+| Noticing sooner that a menu closed or a turn ended | Reading the screen (Claude Code's footer and menus) | A speed-up only: if the wording changes, the hooks still carry the state |
+
+Claude Code's official way to push messages into a running session, [channels](https://code.claude.com/docs/en/channels), is a research preview that needs an MCP plugin and a launch flag; typing into the terminal does the same job without them.
 
 ## Security
 

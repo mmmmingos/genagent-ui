@@ -704,3 +704,5 @@ button.th:hover .tl { text-decoration: underline; text-decoration-color: var(--t
 .attn .qcard .ctxl { display: none; }
 .attn .qfoot .btn .ic { width: 14px; height: 14px; margin-right: 4px; }
 .ovm.needs { color: var(--amber-ink); }
+.sp-hint { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-small); line-height: var(--lh-small); color: var(--amber-ink); background: var(--amber-tint); border: 1px solid var(--amber-ring); border-radius: 10px; padding: 8px 10px; }
+.sp-hint .ic { flex: none; margin-top: 2px; }

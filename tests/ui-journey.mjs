@@ -91,8 +91,13 @@ try {
   await shot("side-chat");
   await clickSel("[data-act=side-compose]");
   await waitFor(`(document.getElementById('sp-composed')||{}).value?.length > 3`, 180000);
+  // Claude Code's own menu is still open: the side chat says so. Press Esc in the real terminal, then send.
+  check("the side chat says Claude's question is still open", await ev(`!!document.querySelector('#railpane .sp-hint')`));
+  await ev(`document.querySelector('.xterm-helper-textarea').focus()`);
+  for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  check("Esc in Claude Code's menu frees the prompt", await waitFor(`!document.querySelector('#railpane .sp-hint')`, 20000));
   await clickSel("[data-act=side-use-composed]");
-  check("the side chat's answer goes into Claude's menu, and Claude carries on", await waitFor(`!document.querySelector('#railpane .sp-head')`, 30000) && await (async () => { for (let i = 0; i < 60; i++) { const s = await state(sid); const f = s && s.file && fs.existsSync(s.file) ? fs.readFileSync(s.file, "utf8") : ""; if (s && !s.native && /User answered Claude|"answers"/.test(f)) return true; await sleep(1000); } return false; })());
+  check("the side chat's answer goes in as your next message, and Claude carries on", await waitFor(`!document.querySelector('#railpane .sp-head')`, 30000) && await (async () => { for (let i = 0; i < 60; i++) { const s = await state(sid); const f = s && s.file && fs.existsSync(s.file) ? fs.readFileSync(s.file, "utf8") : ""; if (s && !s.native && /About your question/.test(f)) return true; await sleep(1000); } return false; })());
   for (let i = 0; i < 240; i++) { const s = await state(sid); if (s && s.status === "idle") break; await sleep(1000); }
   await sleep(4000); await shot("answered");
 

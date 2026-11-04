@@ -58,8 +58,13 @@ try {
   let ask = null;
   for (let i = 0; i < 120 && !ask; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); if (cur.pendingAsk && cur.native === "ask") ask = cur.pendingAsk; }
   check("question open in Claude Code's own menu, with its questions known", !!ask && ask.questions.length === 1);
-  // An answer worked out on the side goes into the menu's "Type something", as if typed there.
-  if (ask) await api(`/api/sessions/${s.id}/answer`, { qi: 0, text: "Teal, from the side chat" });
+  // The user presses Esc in Claude Code's menu; the hook reports it and the question is no longer pending.
+  if (ask) await api(`/api/sessions/${s.id}/interrupt`, {});
+  let freed = false;
+  for (let i = 0; i < 20 && !freed; i++) { await sleep(500); const a = (await api("/api/state")).live.find((x) => x.id === s.id); freed = !a.pendingAsk; }
+  check("Esc in the menu clears the pending question (hook)", freed);
+  // The answer worked out on the side goes in as the user's next message.
+  if (ask) await api(`/api/sessions/${s.id}/send`, { text: "About your question: Teal, from the side chat." });
   let ok = false;
   for (let i = 0; i < 90 && !ok; i++) {
     await sleep(1000);
