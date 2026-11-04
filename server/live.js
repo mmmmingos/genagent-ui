@@ -135,8 +135,22 @@ export function nativeMenu(rows) {
   return { kind: "menu" };
 }
 
+// Claude Code's footer says "esc to interrupt" only while a turn runs. If the hook that ends a turn is
+// late, the screen already shows it ended: count the turn over once that has held for a moment.
+function readIdle(s, rows) {
+  if (s.status !== "working" || !s.hooked) { s.idleSince = 0; return; }
+  const foot = rows.filter((r) => r.trim()).slice(-3).join("\n");
+  const waiting = /shift\+tab to cycle|for agents|\? for shortcuts/i.test(foot) && !/esc to interrupt/i.test(foot);
+  if (!waiting) { s.idleSince = 0; return; }
+  if (!s.idleSince) { s.idleSince = Date.now(); clearTimeout(s.idleTimer); s.idleTimer = setTimeout(() => sniffScreen(s), 1600); return; }
+  if (Date.now() - s.idleSince < 1500) return;
+  s.idleSince = 0; s.status = "idle"; changed(s, "turn-end");
+}
+
 function readNative(s) {
-  const m = nativeMenu(screenRows(s));
+  const rows = screenRows(s);
+  readIdle(s, rows);
+  const m = nativeMenu(rows);
   if (m) {
     s.nativeGoneAt = 0;
     if (s.native?.kind === m.kind) return;

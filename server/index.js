@@ -11,6 +11,7 @@ import { ROOT, DATA, PORT, HOST, TOKEN, hookSecret, safeEqual, ID_RE, log } from
 import * as live from "./live.js";
 import { listSaved, readSession } from "./transcripts.js";
 import { generate, cached } from "./genui.js";
+import { buildDraft } from "./flowdraft.js";
 import * as side from "./side.js";
 import { plan, stepPrompt } from "./plan.js";
 import { available, HARNESSES } from "./harness.js";
@@ -135,7 +136,7 @@ const server = http.createServer(async (req, res) => {
       const harness = url.searchParams.get("harness"), file = findFile(harness, url.searchParams.get("file"));
       if (!file) return json(res, 404, { error: "Session not found" });
       const parsed = readSession(harness, file);
-      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, plan: parsed.plan || null, events: parsed.events.slice(-80), total: parsed.events.length, gen: cached(file) });
+      return json(res, 200, { cwd: parsed.cwd, title: parsed.title, context: parsed.context, pendingAsk: parsed.pendingAsk && parsed.pendingAsk.input, plan: parsed.plan || null, events: parsed.events.slice(-80), total: parsed.events.length, draft: buildDraft(parsed.events), userTurns: parsed.events.filter((e) => e.role === "user").length, gen: cached(file) });
     }
     if (p === "/api/gen" && req.method === "POST") {
       const file = findFile(B.harness, B.file);
@@ -152,7 +153,7 @@ const server = http.createServer(async (req, res) => {
       const [, id, action] = sm; checkId(id);
       if (!action) return json(res, 200, side.get(id) || {});
       if (action === "msg") return json(res, 200, await side.message(id, String(B.text || "")));
-      if (action === "compose") return json(res, 200, await side.compose(id, Array.isArray(B.known) ? B.known.slice(0, 20) : []));
+      if (action === "compose") return json(res, 200, await side.compose(id, Array.isArray(B.known) ? B.known.slice(0, 20) : [], !!B.answerOnly));
       if (action === "sent") return json(res, 200, side.markSent(id, B.text));
       if (action === "cancel") { side.cancel(id); return json(res, 200, { ok: true }); }
     }
@@ -205,7 +206,8 @@ const broadcast = (msg, onlyFor) => { const s = JSON.stringify(msg); for (const 
 live.bus.on("pty", (id, data) => broadcast({ type: "pty", id, data }, id));
 live.bus.on("session", (summary, what) => broadcast({ type: "session", session: summary, what }));
 live.bus.on("transcript", (id, parsed) => {
-  broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30), plan: parsed.plan || null });
+  const st = live.get(id)?.status, working = st === "working" || st === "needs";
+  broadcast({ type: "transcript", id, context: parsed.context, count: parsed.events.length, last: parsed.events.slice(-30), plan: parsed.plan || null, draft: buildDraft(parsed.events, { working }), userTurns: parsed.events.filter((e) => e.role === "user").length });
   midTurn(id, parsed);
 });
 

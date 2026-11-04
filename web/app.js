@@ -29,6 +29,7 @@ const S = {
   sides: new Map(), sideOpen: false,
   plans: loadPlans(),
   ng: { goal: "", cwd: "", plan: null, busy: false, err: "", answers: {}, startedAt: 0, harness: "claude", going: false },
+  flowMode: (() => { try { return localStorage.getItem("genui.flow") || "ai"; } catch { return "ai"; } })(),
   picker: null, toolsOpen: new Set(), inflight: new Set(), armed: null, pickTimers: new Map(), sentItems: loadSent(), permShown: new Map(), authLost: false,
 };
 function loadSent() { try { return new Map(JSON.parse(localStorage.getItem("genui.sent") || "[]")); } catch { return new Map(); } }
@@ -55,7 +56,7 @@ function connect() {
       if (msg.what === "turn-end" && !isOnScreen(s.id)) notify("Finished its turn", title(s), "ok", () => openLive(s.id), 5000);
       schedule(); return;
     }
-    if (msg.type === "transcript") { S.liveTail.set(msg.id, { last: msg.last, context: msg.context, count: msg.count, plan: msg.plan }); schedule(); return; }
+    if (msg.type === "transcript") { S.liveTail.set(msg.id, { last: msg.last, context: msg.context, count: msg.count, plan: msg.plan, draft: msg.draft, userTurns: msg.userTurns }); schedule(); return; }
     if (msg.type === "gen-start") { (msg.midTurn ? S.genMid : S.genBusy).add(msg.file); schedule(); return; }
     if (msg.type === "gen") { mergeGen(msg.file, msg.gen); S.genBusy.delete(msg.file); S.genMid.delete(msg.file); schedule(); return; }
     if (msg.type === "gen-error") { S.genBusy.delete(msg.file); S.genMid.delete(msg.file); schedule(); return; }
@@ -144,13 +145,22 @@ const genFor = (file) => (file ? S.gens.get(file) : null);
 const shortPath = (p) => (p || "").split(/[\\/]/).filter(Boolean).slice(-1)[0] || "";
 const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
 const hid = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return (h >>> 0).toString(36); };
-function title(l) { const g = genFor(l.file); return (g && g.title) || l.name || clip(l.goalHint || "", 60) || "New session"; }
+function title(l) {
+  const g = genFor(l.file), d = (S.liveTail.get(l.id) || {}).draft, first = d && d.nodes.find((n) => n.kind === "goal");
+  return (g && g.title) || l.name || (first && first.label) || clip(l.goalHint || "", 60) || "New session";
+}
 const engShort = (h) => ({ claude: "Claude", codex: "Codex", grok: "Grok" }[h] || h);
 const refKey = (ref) => (ref.kind === "live" ? "L:" + ref.id : "F:" + ref.file);
 const nowAgo = (t) => ago(t).replace(" ago", "");
 
 const cardKeyOf = (file, c) => `${file}|${c.title}`;
-function openCards(file, g) { return (g && g.cards ? g.cards : []).map((c, i) => ({ c, i, key: cardKeyOf(file, c) })).filter((x) => x.c.kind !== "info" && !S.sentCards.has(x.key)); }
+// Cards are questions from the agent's latest reply; once you have written since, they are out of date.
+function cardsCurrent(file, g) {
+  if (!g || !g.cards || !g.cards.length) return false;
+  const live = [...S.live.values()].find((l) => l.file === file), seen = live ? (S.liveTail.get(live.id) || {}).userTurns : (S.views.get(file) || {}).userTurns;
+  return !(seen && g.userTurns != null && seen > g.userTurns);
+}
+function openCards(file, g) { return (cardsCurrent(file, g) ? g.cards : []).map((c, i) => ({ c, i, key: cardKeyOf(file, c) })).filter((x) => x.c.kind !== "info" && !S.sentCards.has(x.key)); }
 
 // One state per live session, used everywhere (sidebar dot, header, card status, chips, footer).
 function liveState(l) {
@@ -172,11 +182,11 @@ function current() {
   if (S.sel.kind === "live") {
     const l = S.live.get(S.sel.id); if (!l) return null;
     const tail = S.liveTail.get(l.id) || {};
-    return { kind: "live", l, id: l.id, harness: l.harness, file: l.file, cwd: l.cwd, context: tail.context || l.context, events: tail.last || [], plan: tail.plan || null, alive: l.alive, state: liveState(l) };
+    return { kind: "live", l, id: l.id, harness: l.harness, file: l.file, cwd: l.cwd, context: tail.context || l.context, events: tail.last || [], plan: tail.plan || null, draft: tail.draft || null, alive: l.alive, state: liveState(l) };
   }
   const v = S.views.get(S.sel.file) || {};
   const sv = S.saved.find((s) => s.file === S.sel.file) || {};
-  return { kind: "saved", harness: S.sel.harness, file: S.sel.file, id: sv.id, cwd: v.cwd || sv.cwd, context: v.context || sv.context, events: v.events || [], plan: v.plan || null, total: v.total, title: v.title || sv.title, mtime: sv.mtime, pendingAsk: v.pendingAsk, loading: !S.views.has(S.sel.file), viewErr: v.error };
+  return { kind: "saved", harness: S.sel.harness, file: S.sel.file, id: sv.id, cwd: v.cwd || sv.cwd, context: v.context || sv.context, events: v.events || [], plan: v.plan || null, draft: v.draft || null, total: v.total, title: v.title || sv.title, mtime: sv.mtime, pendingAsk: v.pendingAsk, loading: !S.views.has(S.sel.file), viewErr: v.error };
 }
 const curSide = () => { const r = current(); return S.sideOpen && r ? S.sides.get(refKey(r)) : null; };
 
@@ -205,7 +215,7 @@ function sideHTML() {
   };
   const needsN = by("needs").length;
   return `
-    <button class="srow srow-new" data-act="go" data-page="new">${icon("plus")}New goal</button>
+    <button class="srow srow-new" data-act="go" data-page="new">${icon("plus")}New session</button>
     <label class="srow srow-search">${icon("search")}<input id="search" data-keep placeholder="Search" aria-label="Search sessions" autocomplete="off"><kbd>Ctrl K</kbd></label>
     <button class="srow ${S.page === "overview" ? "is-on" : ""}" data-act="go" data-page="overview">${icon("flow")}<span class="st">Orchestrator</span>${needsN ? `<span class="sm" style="color:var(--amber-ink)">${needsN}</span>` : ""}</button>
     ${groupsLive.filter(([, items]) => items.length).map(([name, items]) => `<div class="sgroup">${name}</div>${items.map(liveRow).join("")}`).join("")}
@@ -228,7 +238,6 @@ function agentHTML(ref) {
     <div class="head-t" title="${esc(g ? g.goal : "")}">${hdot ? `<span class="hdot" style="background:${hdot}"></span>` : ""}<span>${esc(name)}</span></div>
     <div class="head-meta">${meta.join(" · ")}</div>
     <div class="head-r">
-      <button class="ibtn ${sd ? "is-on" : ""} ${S.sides.has(refKey(ref)) ? "has-badge" : ""}" data-act="side-toggle" title="Side chat: talk something through without touching the session" aria-label="Side chat">${icon("chat")}</button>
       ${l.alive ? `<button class="ibtn ${S.armed?.act?.startsWith("stop-session:") ? "armed" : ""}" data-act="stop-session" title="${S.armed?.act?.startsWith("stop-session:") ? "Click again to stop this session" : "Stop this session"}" aria-label="Stop session">${icon("power")}</button>` : ""}
     </div>
   </header>
@@ -276,11 +285,11 @@ function railHTML(ref, g, ps) {
   const attn = need && open ? `<div class="attn" id="attn-${esc(ref.id)}" data-anim>${attnHTML(ref, g)}</div>` : "";
   const sub = (steps) => steps.length ? `<ol class="pl-sub">${steps.map((s, i) => `<li class="pl-s ${s.state}${s.state === "current" ? " " + tone : ""}" id="pls-${hid(i + s.label)}"><span class="pl-sd"></span><span>${esc(s.label)}</span></li>`).join("")}</ol>` : "";
   // The flowchart read from the conversation, when there is one; the agent's own task list sits under its current step.
-  const tree = g && g.tree && g.tree.nodes.length ? g.tree : null;
+  const tree = pickTree(ref, g);
   const live = nowLine + attn + (ref.plan && ref.plan.length ? sub(own) : "");
   if (tree && !ps) {
-    const nodes = tree.nodes.length;
-    const head = `<div class="pl-eyebrow">${icon("flow", "s14")}Flowchart<span class="pl-count">${plural(nodes, "node")}</span></div><h3 class="pl-title">${esc(g.title || title(l))}</h3>${g.goal ? `<p class="pl-goal">${esc(g.goal)}</p>` : ""}`;
+    const aiWait = S.flowMode === "ai" && !(g && g.tree && g.tree.nodes.length);
+    const head = `<div class="pl-eyebrow">${icon("flow", "s14")}Flowchart${flowToggle(ref, g)}</div>${aiWait ? `<p class="pl-note">The AI view arrives when this turn ends; until then this is the instant one.</p>` : ""}<h3 class="pl-title">${esc((g && g.title) || title(l))}</h3>${g && g.goal ? `<p class="pl-goal">${esc(g.goal)}</p>` : ""}`;
     return railShell(ref, `${head}<div class="tree">${treeHTML(tree, hid(ref.file || ref.id), tone, `<div class="t-live">${live}</div>`)}</div>`);
   }
   const row = (label, state, who, extra, k) => `<li class="pl-row ${state}${state === "current" ? " " + tone : ""}" id="plr-${hid(k + label)}"><span class="pl-dot"></span><div class="pl-body"><div class="pl-label"><span>${esc(label)}</span>${who ? `<span class="pl-who">${esc(who)}</span>` : ""}</div>${extra || ""}</div></li>`;
@@ -302,12 +311,25 @@ function railHTML(ref, g, ps) {
   }
   return railShell(ref, `${head}<ol class="pl">${rows}</ol>`);
 }
-// The rail's frame: scrolling content, then the context meter (and Resume once it has ended).
+// A side agent you can ask anything, any time: it reads the session but never touches it.
+const sideButton = () => `<button class="btn btn-neutral sm side-btn" data-act="side-toggle" title="Talk something through with a separate agent. It knows this session; nothing reaches the session unless you send it.">${icon("chat", "s14")}Side chat</button>`;
+// The rail's frame: scrolling content, then the side chat button and the context meter (and Resume once it has ended).
 function railShell(ref, inner) {
   const l = ref.l, ctx = ref.context;
   return `<div class="pl-scroll">${inner}</div>
-    <div class="pl-foot">${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
-      ${!l.alive && ref.harness === "claude" ? `<span class="sp"></span><button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
+    <div class="pl-foot">${sideButton()}<span class="sp"></span>${ctx ? `<span class="chip" id="chip-ctx" title="${kt(ctx.used)} of ${kt(ctx.window)} tokens in this session's context"><span class="v">Context</span><span class="ctxbar"><i style="width:${ctx.pct}%;background:${ctx.pct >= 95 ? "var(--red-dot)" : ctx.pct >= 80 ? "var(--amber-dot)" : "var(--text-3)"}"></i></span><span class="num">${ctx.pct}%</span></span>` : ""}
+      ${!l.alive && ref.harness === "claude" ? `<button class="btn btn-tint sm" data-act="resume" id="resume-btn">${S.armed?.act?.startsWith("resume:") ? "Click again to resume" : "Resume it"}</button>` : ""}</div>`;
+}
+
+// Which flowchart to draw: the AI one (grouped and labelled by a model) or the instant one (built by
+// code from the transcript, always up to date). In AI mode the instant one shows until the AI one arrives.
+function pickTree(ref, g) {
+  const ai = g && g.tree && g.tree.nodes.length ? g.tree : null, instant = ref.draft && ref.draft.nodes.length ? ref.draft : null;
+  return S.flowMode === "instant" ? instant || ai : ai || instant;
+}
+function flowToggle(ref, g) {
+  const waiting = S.flowMode === "ai" && !(g && g.tree && g.tree.nodes.length);
+  return `<span class="seg flowseg" role="group" aria-label="Flowchart source"><button aria-pressed="${S.flowMode === "ai"}" data-act="flow-mode" data-mode="ai" title="A model groups the conversation into goals and steps. Updates when a turn ends.">AI${waiting ? ` <span class="spin"></span>` : ""}</button><button aria-pressed="${S.flowMode === "instant"}" data-act="flow-mode" data-mode="instant" title="Built by code from the conversation as it happens. Instant, no model.">Instant</button></span>`;
 }
 
 // The conversation's flowchart as a branching tree. Settled branches fold to one line (click to
@@ -318,17 +340,21 @@ function treeHTML(tree, key, tone, atCurrent) {
   const settled = (n) => final(n) && kids(n.id).every(settled);
   const count = (n) => kids(n.id).reduce((k, c) => k + 1 + count(c), 0);
   const leaf = tree.nodes.find((n) => n.state === "current" && !kids(n.id).some((c) => c.state === "current"));
+  const branch = (n) => n.kind === "goal" && n.parent ? `<span class="tbranch" title="A new request, branching off">${icon("branch")}</span>` : "";
   const mark = (n) => n.state === "done" ? `<span class="tm done">${icon("check")}</span>` : n.state === "dropped" ? `<span class="tm dropped">${icon("x")}</span>`
     : n.state === "current" ? `<span class="tm current ${n === leaf ? tone : ""}"></span>` : `<span class="tm next"></span>`;
   const node = (n) => {
     const ch = kids(n.id), k = `tree:${key}:${n.id}`;
     // The trunk stays open so the shape shows; finished branches fold. A click flips either.
     const folded = ch.length && settled(n) && (n.parent ? !S.open.has(k) : S.open.has(k));
-    const label = `<span class="tl">${esc(n.label)}</span>${n.note ? `<span class="tnote">${esc(n.note)}</span>` : ""}`;
+    const label = `${branch(n)}<span class="tl">${esc(n.label)}</span>${n.note ? `<span class="tnote">${esc(n.note)}</span>` : ""}`;
     const head = ch.length && settled(n)
       ? `<button class="th" data-act="tree-fold" data-k="${esc(k)}" aria-expanded="${!folded}">${mark(n)}${label}<span class="tcount">${plural(count(n), "step")}</span>${icon(folded ? "chev" : "chevd", "s12")}</button>`
       : `<div class="th">${mark(n)}${label}</div>`;
-    return `<li class="tn ${n.kind} ${n.state}${n === leaf ? " leaf " + tone : ""}" id="tn-${esc(key)}-${esc(n.id)}" data-decode>${head}${n === leaf ? atCurrent : ""}${ch.length && !folded ? `<ul class="tr">${ch.map(node).join("")}</ul>` : ""}</li>`;
+    // A long run of steps shows its latest ones; the earlier ones fold into one line you can open.
+    const more = `more:${key}:${n.id}`, cap = 12, hidden = ch.length > cap && !S.open.has(more) ? ch.length - (cap - 1) : 0;
+    const fold = hidden ? `<li class="tn step done" id="tn-${esc(key)}-${esc(n.id)}-more"><button class="th" data-act="tree-fold" data-k="${esc(more)}">${mark({ state: "done" })}<span class="tl">${hidden} earlier steps</span>${icon("chev", "s12")}</button></li>` : "";
+    return `<li class="tn ${n.kind} ${n.state}${n === leaf ? " leaf " + tone : ""}" id="tn-${esc(key)}-${esc(n.id)}" data-decode>${head}${n === leaf ? atCurrent : ""}${ch.length && !folded ? `<ul class="tr">${fold}${ch.slice(hidden).map(node).join("")}</ul>` : ""}</li>`;
   };
   return `<ul class="tr root">${kids(null).map(node).join("")}</ul>${leaf ? "" : atCurrent}`;
 }
@@ -371,26 +397,28 @@ function sessionHTML(ref) {
   if (g && curStep >= 0) metaParts.push(`step ${curStep + 1}/${g.steps.length}: ${esc(clip(g.steps[curStep].label, 40))}`);
   if (st === "needs" && ref.l.lastActivity) { const since = nowAgo(ref.l.lastActivity); metaParts.push(`<span class="wait">waiting${since !== "now" ? " " + esc(since) : ""}</span>`); }
   const hdot = st === "run" ? "var(--accent-dot)" : st === "needs" ? "var(--amber-dot)" : "";
-  const hasSide = S.sides.has(refKey(ref));
   return `
   <header class="head">
     <div class="head-t" title="${esc(g ? g.goal : "")}">${hdot ? `<span class="hdot" style="background:${hdot}"></span>` : ""}<span>${esc(name)}</span></div>
     <div class="head-meta">${metaParts.filter(Boolean).join(" · ")}</div>
     <div class="head-r">
-      <button class="ibtn ${S.sideOpen && hasSide ? "is-on" : ""} ${hasSide ? "has-badge" : ""}" data-act="side-toggle" title="Side chat: talk it through without touching the session" aria-label="Side chat">${icon("chat")}</button>
     </div>
   </header>
   <div class="scroll" id="scroll"><div class="stack">
     <div class="thread">${feed(ref)}${blockingCards(ref)}${genCards(ref, g)}</div>
     <div class="dock">${composer(ref)}</div>
   </div></div>
-  <aside class="railpane" id="railpane" aria-label="${curSide() ? "Side chat" : "Flowchart"}">${curSide() ? sideChatHTML(curSide()) : `<div class="pl-scroll">${goalCard(ref, g)}</div>`}</aside>`;
+  <aside class="railpane" id="railpane" aria-label="${curSide() ? "Side chat" : "Flowchart"}">${curSide() ? sideChatHTML(curSide()) : `<div class="pl-scroll">${goalCard(ref, g)}</div><div class="pl-foot">${sideButton()}</div>`}</aside>`;
 }
 
 // Goal card with the vertical flow rail (3.3). The footer follows the live state, not stale text.
 function goalCard(ref, g) {
   const busy = ref.file && S.genBusy.has(ref.file);
   const err = (ref.file && S.genErr.get(ref.file)) || ref.viewErr;
+  if (!g && ref.draft && ref.draft.nodes.length) {
+    return `<section class="card" id="goal"><div class="ghead"><h2>${esc(clip(ref.title || "Session", 90))}</h2></div><div class="pl-eyebrow" style="margin-top:6px">${icon("flow", "s14")}Flowchart${flowToggle(ref, g)}</div>
+      <div class="tree">${treeHTML(ref.draft, hid(ref.file), "idle", "")}</div>${busy ? `<div class="gfoot"><span class="now"><span class="spin"></span><span class="shimmer t2">AI is reading the conversation</span></span></div>` : ""}</section>`;
+  }
   if (!g) {
     if (err) return `<section class="card" id="goal"><div class="ghead"><h2>Couldn't read this session</h2></div><div class="gfoot"><span class="now inline-err">${icon("alert")}<span>${esc(clip(err, 140))}</span></span><button class="btn btn-tint" data-act="regen">Try again</button></div></section>`;
     const label = ref.kind === "live" && !ref.file ? "Waiting for the first turn" : `Reading ${ref.total ? plural(ref.total, "event") : "the session"}`;
@@ -429,7 +457,7 @@ function goalCard(ref, g) {
       <span class="stat ${STAT_CLS[status] || "idle"}"><i></i>${esc(statLabel)}</span>
       <button class="ibtn sm" data-act="regen" title="${busy || S.genMid.has(ref.file) ? "Reading the session again" : `${ref.plan ? "Steps from the agent's own task list. Goal" : "Goal and flow"} written by GenUI Agent from the transcript, ${esc(ago(g.at))}. Click to read it again.`}" aria-label="Regenerate">${busy || S.genMid.has(ref.file) ? `<span class="spin"></span>` : icon("refresh", "s14")}</button></div>
     <p class="goal-sub" title="${esc(g.goal)}">${esc(g.goal)}</p>
-    ${g.tree && g.tree.nodes.length ? `<div class="tree">${treeHTML(g.tree, hid(ref.file), cur, "")}</div>` : `<ol class="rail">
+    ${pickTree(ref, g) ? `<div class="tree">${treeHTML(pickTree(ref, g), hid(ref.file), cur, "")}</div>` : `<ol class="rail">
       ${hiddenCount ? `<li class="rrow done"><span class="rn"></span><button class="rl collapsed-rows" data-act="rail-expand">${plural(hiddenCount, "earlier step")} ${icon("chevd", "s12")}</button><span class="rm"></span></li>` : ""}
       ${rows.map(rowHTML).join("")}
     </ol>`}
@@ -508,7 +536,7 @@ const permTitle = (tool, i) => ({ Bash: "Run this command", PowerShell: "Run thi
 
 const KIND = { choice: ["choice", "Choice"], approve: ["shield", "Approval"], input: ["edit", "Answer"], teammate: ["user", "Teammate"], checklist: ["list", "Checklist"], info: ["info", "Note"] };
 function genCards(ref, g) {
-  if (!g || !g.cards || !g.cards.length) return "";
+  if (!cardsCurrent(ref.file, g)) return "";
   const live = ref.kind === "live" && ref.alive;
   return g.cards.map((c, i) => (S.sentCards.has(cardKeyOf(ref.file, c)) ? "" : genCard(ref, c, i, live))).join("");
 }
@@ -547,7 +575,7 @@ function genCard(ref, c, i, live) {
     body = c.draft ? `<div class="prose" style="font-size:var(--fs-body);line-height:var(--lh-body)">${md(c.draft)}</div>` : "";
   }
   const sdc = S.sides.get(refKey(ref)), inSide = !!(sdc && sdc.extra && sdc.extra.cardKey === key);
-  const discuss = c.kind === "info" ? "" : inSide ? `<button class="btn btn-text" data-act="side-toggle" style="color:var(--accent-ink)">Back to side chat</button>` : `<button class="btn btn-text" data-act="discuss" data-k="${esc(key)}" data-i="${i}">Discuss it</button>`;
+  const discuss = c.kind === "info" ? "" : inSide ? `<button class="btn btn-text" data-act="side-toggle" style="color:var(--accent-ink)">Back to side chat</button>` : `<button class="btn btn-neutral sm" data-act="discuss" data-k="${esc(key)}" data-i="${i}">${icon("chat", "s14")}Discuss it</button>`;
   return `<section class="card qcard" id="${id}" data-anim>
     <div class="eyebrow">${icon(ic)}${noun}<span class="tag" title="GenUI Agent read this question from the agent's reply. Answers are collected here and sent together.">From the reply</span>${stat}</div>
     <h3>${esc(c.title)}</h3>${c.why && c.kind !== "teammate" ? `<p class="ctxl">${esc(c.why)}</p>` : ""}
@@ -608,7 +636,7 @@ function renderTerm() {
   if (!show) return;
   const l = ref.l;
   morph($("#tstrip"), `${icon("term")}<b>${esc(S.labels[l.harness])}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span><span class="sp"></span>
-    ${l.alive ? `<button class="btn btn-text" data-act="term-int">Interrupt</button><button class="btn btn-text" data-act="term-clear">Clear</button>` : `<span class="exit ${l.exitCode ? "bad" : ""}">${l.exitCode ? `Exited with code ${l.exitCode}` : "Exited"}</span>`}`);
+    ${l.alive ? `<button class="btn btn-text" data-act="term-int">Interrupt</button><button class="btn btn-text" data-act="term-clear" title="Clears this window's view of the terminal; the session is untouched">Clear screen</button>` : `<span class="exit ${l.exitCode ? "bad" : ""}">${l.exitCode ? `Exited with code ${l.exitCode}` : "Exited"}</span>`}`);
   let t = terms.get(l.id);
   if (!t) {
     const el = document.createElement("div"); el.className = "xterm-wrap";
@@ -636,18 +664,13 @@ function fitTerm(t) { try { const c = t.term.cols, r = t.term.rows; t.fit.fit();
 function sideChatHTML(sd) {
   const d = sd.data;
   const forked = sd.ref.harness === "claude" && sd.ref.mainId;
-  const discussTok = d ? Math.round((d.msgs || []).reduce((n, m) => n + (m.text || "").length, 0) / 4) : 0;
   const receives = sd.composing ? Math.round((sd.composed || "").length / 4) : 0;
   const mainRef = sd.ref.kind === "live" ? S.live.get(sd.ref.id) : null;
-  const mainCtx = mainRef ? (S.liveTail.get(mainRef.id) || {}).context || mainRef.context : null;
   const live = !!(mainRef && mainRef.alive);
   const forCard = !!(sd.extra.cardKey || sd.extra.ask);
   const busy = sd.busy || (d && d.busy);
   return `
-    <div class="sp-head">${live ? `<button class="ibtn" data-act="side-close" aria-label="Back to the plan" title="Back to the plan">${icon("back")}</button>` : ""}<div class="tt"><b>Side chat</b><small>${forked ? "A fork · the session isn't touched" : "Reads the session · it isn't touched"}</small></div>${live ? "" : `<button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button>`}</div>
-    <div class="sp-meter">
-      <div class="l"><span class="num">${d ? `~${kt(discussTok)} tokens here · ${receives ? `sending adds ~${kt(receives)}` : "nothing sent yet"}${mainCtx ? ` · session ${mainCtx.pct}% full` : ""}` : "Starting"}</span></div>
-    </div>
+    <div class="sp-head">${live ? `<button class="ibtn" data-act="side-close" aria-label="Back to the plan" title="Back to the plan">${icon("back")}</button>` : ""}<div class="tt"><b>Side chat</b><small>${esc(S.labels[sd.ref.harness] || "The agent")} won't see this unless you send it</small></div>${live ? "" : `<button class="ibtn" data-act="side-close" aria-label="Close side chat">${icon("x")}</button>`}</div>
     ${sd.topic ? `<div class="sp-topic">About <b>${esc(clip(sd.topic, 160))}</b></div>` : ""}
     <div class="sp-body" id="sp-body">
       ${d ? (d.msgs || []).map((m, i) => m.who === "ai" ? `<div class="sp-ai" id="sm-${i}" data-anim>${md(m.text)}${i > 0 && (live || forCard) ? `<div class="use"><button class="btn btn-tint sm" data-act="side-use" data-i="${i}">Use this as the answer</button></div>` : ""}</div>` : `<div class="sp-me" id="sm-${i}">${esc(m.text)}</div>`).join("") : ""}
@@ -661,7 +684,7 @@ function sideChatHTML(sd) {
         <div class="sp-actions"><button class="btn btn-text" data-act="side-back">Keep discussing</button><span class="sp"></span>${forCard ? `<button class="btn btn-tint" data-act="side-use-composed" ${S.inflight.has("side-use") ? "disabled" : ""}>${sd.extra.ask ? "Send answer" : "Use as the answer"}</button>` : live ? `<button class="btn btn-tint" data-act="side-send">Send to ${esc(S.labels[sd.ref.harness])}</button>` : `<button class="btn btn-tint" data-act="side-copy">${icon("copy")}Copy</button>`}</div>`
       : `
         <div class="sp-compose"><textarea id="sp-in" data-keep data-draft="side:${esc(d ? d.id : "new")}" rows="1" placeholder="Ask on the side" aria-label="Message the side agent"></textarea><button class="send sm" data-act="side-msg" aria-label="Send" ${busy || !d ? "disabled" : ""}>${icon("up")}</button></div>
-        <div class="sp-actions"><span class="t3" style="font-size:var(--fs-small);line-height:18px">Nothing here reaches the session until you send.</span><span class="sp"></span><button class="btn btn-tint sm" data-act="side-compose" ${busy || !d || !(d.msgs || []).length ? "disabled" : ""}>Compose answer</button></div>`}
+        <div class="sp-actions"><span class="sp"></span><button class="btn btn-tint" data-act="side-compose" ${busy || !d || !(d.msgs || []).length ? "disabled" : ""} title="Write the one message to send back, from this discussion">Compose answer</button></div>`}
     </div>`;
 }
 
@@ -705,7 +728,7 @@ function overviewHTML() {
       <span class="ovt"><b>${esc(title(l))}</b><small>${ps ? `${esc(clip(ps.plan.title, 28))} · step ${ps.i + 1}/${ps.plan.steps.length}` : esc(shortPath(l.cwd))} · ${esc(engShort(l.harness))}</small></span>
       ${g ? hflow(g.steps, st === "needs" ? "needs" : st === "run" ? "run" : st === "done" ? "done" : "idle") : `<div class="hflow"><span class="hn current run"><span class="rn"></span><span class="hl">Starting</span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span><span class="hn next"><span class="rn"></span><span class="hl"></span></span></div>`}
       <span class="ovnow ${st === "needs" ? "needs" : st === "run" || st === "reading" ? "run" : ""}"><span class="${st === "run" || st === "reading" ? "shimmer" : ""}">${esc(nowText)}</span></span>
-      <span class="ovm">${g && cur ? `${g.steps.indexOf(cur) + 1}/${g.steps.length}` : esc(nowAgo(l.lastActivity || l.createdAt))}</span></button>`;
+      <span class="ovm ${st === "needs" ? "needs" : ""}">${esc(STATE_LABEL[st] || "")}</span></button>`;
   };
   const plans = S.plans.slice(0, 6);
   const planRow = (p, pi) => {
@@ -728,8 +751,8 @@ function overviewHTML() {
   return `<header class="head"><div class="head-t">Orchestrator</div><div class="head-meta">Agents started here: where each one is, and what it needs</div></header>
   <div class="scroll"><div class="page">
     <p class="summary"><b class="${needs ? "needs" : ""}">${needs}</b> need${needs === 1 ? "s" : ""} you · <b>${run}</b> running · <b>${turn}</b> your turn${done ? ` · <b>${done}</b> done` : ""}</p>
-    <div class="sec">Running now</div>
-    ${running.length ? `<section class="card ovcard">${running.map(row).join("")}</section>` : `<section class="card ovcard"><div class="ovempty"><span>No agents running. Start one from a new goal.</span><button class="btn btn-tint" data-act="go" data-page="new">New goal</button></div></section>`}
+    <div class="sec">Active</div>
+    ${running.length ? `<section class="card ovcard">${running.map(row).join("")}</section>` : `<section class="card ovcard"><div class="ovempty"><span>No agents running. Start one from a new session.</span><button class="btn btn-tint" data-act="go" data-page="new">New session</button></div></section>`}
     ${plans.length ? `<div class="sec">Plans</div><section class="card ovcard">${plans.map(planRow).join("")}</section>` : ""}
     ${ended.length ? `<div class="sec">Ended</div><section class="card ovcard ovended">${ended.map(row).join("")}</section>` : ""}
   </div></div>`;
@@ -763,15 +786,18 @@ function newGoalHTML() {
       <div class="qfoot"><button class="btn btn-text" data-act="plan">Plan again</button><span class="sp"></span>${first >= 0 ? `<button class="btn btn-tint" data-act="plan-go" ${ng.going ? "disabled" : ""}>${ng.going ? `<span class="spin"></span>Starting` : `Start step ${first + 1}`}</button>` : ""}</div>
     </section>`;
   }
-  return `<header class="head"><div class="head-t">New goal</div></header>
+  // Sending starts the harness with exactly what you typed, as if typed into it at home. Planning a
+  // goal into several agents first is a separate, optional action.
+  const h = S.labels[ng.harness] || "Claude Code";
+  return `<header class="head"><div class="head-t">New session</div></header>
   <div class="scroll"><div class="newgoal">
     ${planHTML}
-    ${ng.plan || ng.busy ? "" : `<div class="composer" id="ng-composer"><textarea id="ng-goal" data-keep data-draft="ng-goal" rows="2" placeholder="Describe what should get done" aria-label="Goal"></textarea>
+    ${ng.plan || ng.busy ? "" : `<div class="composer" id="ng-composer"><textarea id="ng-goal" data-keep data-draft="ng-goal" rows="2" placeholder="Message ${esc(h)}" aria-label="First message"></textarea>
       <div class="tbar"><button class="pill" data-act="pick-folder" id="ng-folder">${icon("folder")}<span>${ng.cwd ? esc(shortPath(ng.cwd)) : "Choose a folder"}</span></button>
-        <button class="pill" data-act="ng-harness" title="Harness for “Start now”">${icon("term")}<span>${esc(S.labels[ng.harness] || "Claude Code")}</span></button><span class="sp"></span>
-        <button class="btn btn-text" data-act="start-now" ${S.inflight.has("start-now") ? "disabled" : ""}>Start now</button>
-        <button class="send" data-act="plan" aria-label="Plan it" title="Plan it into steps">${icon("up")}</button></div></div>
-      <div class="hint">Send to plan it into steps and collect what each step needs from you. “Start now” skips planning and opens one session.</div>`}
+        <button class="pill" data-act="ng-harness" title="Which agent to start">${icon("term")}<span>${esc(h)}</span></button><span class="sp"></span>
+        <button class="btn btn-text" data-act="plan" title="Break it into steps, each run by its own agent">Plan it first</button>
+        <button class="send" data-act="start-now" aria-label="Start ${esc(h)}" title="Start ${esc(h)} with this message" ${S.inflight.has("start-now") ? "disabled" : ""}>${icon("up")}</button></div></div>
+      <div class="hint">Starts ${esc(h)} in that folder with your message, exactly as in your terminal. “Plan it first” breaks a bigger goal into steps for several agents.</div>`}
   </div></div>`;
 }
 
@@ -801,6 +827,7 @@ document.addEventListener("click", async (e) => {
       case "term-open": focusTerm(ref); break;
       // What the agent needs opens under its step in the plan.
       case "attn": { const k = "attn:" + ref.id; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
+      case "flow-mode": S.flowMode = el.dataset.mode; try { localStorage.setItem("genui.flow", S.flowMode); } catch {} render(); break;
       case "tree-fold": { const k = el.dataset.k; if (S.open.has(k)) S.open.delete(k); else S.open.add(k); render(); break; }
       // A question in Claude Code's own menu: talk it through on the side; the answer goes back into the menu.
       case "discuss-ask": { const qi = +el.dataset.qi, x = (ref.l.pendingAsk.questions || [])[qi] || {}; openSide(`${x.question} Options: ${(x.options || []).map((o) => o.label).join("; ")}`, { ask: ref.l.pendingAsk.id, qi }); break; }
@@ -882,7 +909,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
   if (el.id === "sp-in") { e.preventDefault(); sideMsg(); }
-  else if (el.id === "ng-goal") { e.preventDefault(); planIt(); }
+  else if (el.id === "ng-goal") { e.preventDefault(); startNow(); }
   else if (el.id === "pk-path") { e.preventDefault(); browse(el.value.trim()).catch((x) => toast(x.message, "", "fail")); }
   else if (el.dataset.actInput === "field") { e.preventDefault(); fieldSend(el.dataset.mode, el.dataset.k); }
 });
@@ -890,6 +917,8 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 // ---- Actions ---------------------------------------------------------------------
 function go(page) {
+  // A new session starts in your most recent project unless you pick another.
+  if (page === "new" && !S.ng.cwd) S.ng.cwd = recentFolders()[0] || "";
   S.page = page; if (page !== "session") S.sel = null; S.sideOpen = false; render();
   const sc = $(".scroll"); if (sc) sc.scrollTop = 0;
   if (page === "new") setTimeout(() => $("#ng-goal")?.focus(), 20);
@@ -965,7 +994,7 @@ async function sideCompose() {
   sd.busy = true; sd.composingBusy = true; render(); scrollSide();
   const ref = current(), g = ref && genFor(ref.file);
   const known = ref ? openCards(ref.file, g).filter((x) => x.key !== sd.extra.cardKey && S.answers.get(x.key)).map((x) => ({ title: x.c.title, answer: S.answers.get(x.key) })) : [];
-  try { const r = await api(`/api/side/${sd.data.id}/compose`, { known }); sd.data = r; sd.composed = r.composed; sd.composing = true; S.drafts.set(`composed:${r.id}`, r.composed); } catch (e) { sd.err = e.message; }
+  try { const r = await api(`/api/side/${sd.data.id}/compose`, { known, answerOnly: !!(sd.extra.ask || sd.extra.cardKey) }); sd.data = r; sd.composed = r.composed; sd.composing = true; S.drafts.set(`composed:${r.id}`, r.composed); } catch (e) { sd.err = e.message; }
   sd.busy = false; sd.composingBusy = false; render(); focusComposed();
 }
 function focusComposed() { const t = $("#sp-composed"); if (t) { const sd = curSide(); if (sd && !t.value) t.value = sd.composed || ""; autosize(t); t.focus({ preventScroll: true }); t.setSelectionRange(0, 0); t.scrollTop = 0; } }
@@ -1151,6 +1180,7 @@ function icon(n, cls = "") {
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>', choice: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
     copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     enter: '<path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/>',
+    branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10"/><path d="M18 9a6 6 0 0 1-6 6H8"/>',
   }[n] || "";
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 }

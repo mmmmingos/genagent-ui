@@ -686,3 +686,21 @@ button.th:hover .tl { text-decoration: underline; text-decoration-color: var(--t
 .main.withrail .scroll { margin-right: var(--rail-w); }
 .railpane #goal { border: 0; box-shadow: none; background: transparent; padding: 0; }
 .railpane #goal .ghead h2 { font-size: var(--fs-title); }
+.side-btn .ic { width: 14px; height: 14px; margin-right: 4px; }
+.seg.flowseg { margin-left: auto; height: 24px; }
+.seg.flowseg button { padding: 0 9px; font-size: var(--fs-small); }
+
+/* Review fixes: branches read as branches, labels wrap, the AI view says when it's catching up. */
+.tn.goal { margin-top: 4px; }
+.tn.goal > .th .tl { font-weight: 600; }
+.tbranch { display: inline-flex; flex: none; color: var(--accent-dot); }
+.tbranch .ic { width: 13px; height: 13px; }
+.th { align-items: flex-start; }
+.th .tm { margin-top: 3px; }
+.th .tbranch { margin-top: 3px; }
+.th .tl { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pl-note { font-size: var(--fs-small); line-height: var(--lh-small); color: var(--text-3); margin: 6px 0 0; }
+.seg.flowseg .spin { width: 10px; height: 10px; vertical-align: -1px; }
+.attn .qcard .ctxl { display: none; }
+.attn .qfoot .btn .ic { width: 14px; height: 14px; margin-right: 4px; }
+.ovm.needs { color: var(--amber-ink); }

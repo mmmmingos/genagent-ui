@@ -70,6 +70,7 @@ test("small formatters", () => {
 
 // ---- Growing flow and the agent's own task list ----
 import { emptyTree, applyOps, stepsFromTree, currentLeaf, currentGoal, treeText } from "../server/flowtree.js";
+import { buildDraft, goalLabel } from "../server/flowdraft.js";
 
 test("Codex update_plan becomes the flow", () => {
   const p = parseCodex([
@@ -174,4 +175,45 @@ test("flowchart: a goal whose branches are all finished is done; later goals bra
   const [trunk, , branch] = t.nodes;
   assert.equal(branch.parent, trunk.id);
   assert.equal(trunk.state, "done");
+});
+
+test("instant flowchart: goals from your messages, grouped steps from the agent's actions", () => {
+  const ev = [
+    { role: "user", text: "Can you update the navbar to point to juney.ai? Thanks" },
+    { role: "tool", tool: "Read", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
+    { role: "tool", tool: "Grep", input: { pattern: "juney" } },
+    { role: "tool", tool: "Read", input: { file_path: "C:/r/app/FooterV3.tsx" } },
+    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
+    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/NavbarV3.tsx" } },
+    { role: "assistant", text: "Done. Should I colour it too?" },
+    { role: "user", text: "yes" },                                   // an answer: same goal
+    { role: "tool", tool: "Bash", input: { command: "npm test && npm run lint" } },
+    { role: "assistant", text: "Tests pass. Want me to fix the footer too?" },
+    { role: "user", text: "Now fix the footer link as well." },     // a new request, even after a question: a branch
+    { role: "tool", tool: "Edit", input: { file_path: "C:/r/app/FooterV3.tsx" } },
+  ];
+  const t = buildDraft(ev, { working: true });
+  const goals = t.nodes.filter((n) => n.kind === "goal");
+  assert.deepEqual(goals.map((g) => g.label), ["Update the navbar to point to juney.ai", "Fix the footer link as well"]);
+  assert.equal(goals[1].parent, goals[0].id);
+  const steps = t.nodes.filter((n) => n.parent === goals[0].id && n.kind === "step").map((n) => n.label + (n.note ? " " + n.note : ""));
+  assert.deepEqual(steps, ["Read 3 files", "Edit NavbarV3.tsx ×2", "Run npm test"]);
+  const cur = t.nodes.filter((n) => n.state === "current");
+  assert.deepEqual(cur.map((n) => n.label), ["Update the navbar to point to juney.ai", "Fix the footer link as well", "Edit FooterV3.tsx"]);
+  assert.equal(goalLabel("I want you to rename the button. Then ship it"), "Rename the button");
+});
+
+test("Claude: queued messages count as the user's; TaskCreate/TaskUpdate lists become the flow", () => {
+  const p = parseClaude([
+    { type: "user", message: { role: "user", content: "Build the page" } },
+    { type: "assistant", message: { content: [
+      { type: "tool_use", id: "a", name: "TaskCreate", input: { subject: "Write hero" } },
+      { type: "tool_use", id: "b", name: "TaskCreate", input: { subject: "Write FAQ" } },
+      { type: "tool_use", id: "c", name: "TaskUpdate", input: { taskId: "1", status: "completed" } },
+      { type: "tool_use", id: "d", name: "TaskUpdate", input: { taskId: "2", status: "in_progress" } },
+    ] } },
+    { type: "attachment", attachment: { type: "queued_command", prompt: "Also add a footer", origin: { kind: "human" } } },
+  ]);
+  assert.deepEqual(p.plan, [{ label: "Write hero", state: "done" }, { label: "Write FAQ", state: "current" }]);
+  assert.deepEqual(p.events.filter((e) => e.role === "user").map((e) => e.text), ["Build the page", "Also add a footer"]);
 });

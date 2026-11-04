@@ -122,7 +122,7 @@ export async function generate(harness, file, { force = false, midTurn = false }
     const userTurns = ev.filter((e) => e.role === "user").length;
     tree = { ...applyOps(tree, data.ops || [], userTurns), cursor: ev.length };
     const g = currentGoal(tree);
-    const out = { title: data.title, goal: data.goal || (g && g.label) || "", status: data.status, now: data.now, cards: data.cards || [],
+    const out = { userTurns, title: data.title, goal: data.goal || (g && g.label) || "", status: data.status, now: data.now, cards: data.cards || [],
       tree, steps: stepsFromTree(tree), source: parsed.plan ? "agent" : "generated", midTurn, at: Date.now(), cost: r.cost, size: st.size };
     fs.writeFileSync(p, JSON.stringify(out));
     fs.writeFileSync(latestPath(file), JSON.stringify(out));

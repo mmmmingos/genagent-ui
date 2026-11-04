@@ -33,7 +33,7 @@ function headTail(file, head = 24000, tail = 48000) {
   } catch { return { head: [], tail: [], size: 0 }; }
 }
 
-// The agent's own task list (Codex update_plan, Claude TodoWrite) as flow steps.
+// The agent's own task list (Codex update_plan, Claude TodoWrite or TaskCreate/TaskUpdate) as flow steps.
 const PLAN_STATE = { completed: "done", done: "done", in_progress: "current", inprogress: "current", active: "current", pending: "next", todo: "next" };
 export function toPlan(items) {
   if (!Array.isArray(items) || !items.length) return null;
@@ -51,12 +51,18 @@ function claudeText(content) {
 export function parseClaude(lines) {
   const events = [];
   let cwd = "", title = "", usage = null, model = "", customTitle = "", plan = null;
+  const tasks = [];
   const answered = new Set();
   for (const l of lines) {
     if (l.type === "custom-title" && l.customTitle) customTitle = l.customTitle;
     if (l.type === "summary" && l.summary && !title) title = l.summary;
     if (l.isSidechain) continue;
     if (l.cwd && !cwd) cwd = l.cwd;
+    // A message typed while the agent was working is folded into its turn as a queued command: it is still the user speaking.
+    if (l.type === "attachment" && l.attachment && l.attachment.type === "queued_command" && (l.attachment.origin || {}).kind === "human" && l.attachment.prompt) {
+      events.push({ role: "user", text: String(l.attachment.prompt), t: l.timestamp, queued: true });
+      continue;
+    }
     const c = l.message && l.message.content;
     if (l.type === "user" && !l.isMeta) {
       if (Array.isArray(c) && c.some((b) => b.type === "tool_result")) {
@@ -77,6 +83,9 @@ export function parseClaude(lines) {
         if (b.type === "tool_use") {
           events.push({ role: "tool", tool: b.name, input: b.input, id: b.id, t: l.timestamp });
           if (b.name === "TodoWrite" && b.input) plan = toPlan(b.input.todos) || plan;
+          // Newer Claude Code keeps its list with TaskCreate / TaskUpdate (ids count up from 1).
+          if (b.name === "TaskCreate" && b.input) { tasks.push({ subject: b.input.subject || b.input.description || "", status: "pending" }); plan = toPlan(tasks); }
+          if (b.name === "TaskUpdate" && b.input) { const k = tasks[Number(b.input.taskId) - 1]; if (k) { if (b.input.status) k.status = b.input.status; if (b.input.subject) k.subject = b.input.subject; } plan = toPlan(tasks.filter((x) => x.status !== "deleted")); }
         }
       }
     }

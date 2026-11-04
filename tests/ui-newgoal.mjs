@@ -57,6 +57,12 @@ try {
   check(`picker fully on screen ${JSON.stringify(pickerBox)}`, pickerBox && pickerBox.top >= 0 && pickerBox.bottom <= pickerBox.h);
   await shot("ng-02-picker");
   check(`recent projects listed (${await ev(`document.querySelectorAll('.pk-recent .pk-item').length`)})`, (await ev(`document.querySelectorAll('.pk-recent .pk-item').length`)) >= 1);
+  // The picker opens at your most recent project; go to the GitHub folder first.
+  await ev(`(()=>{const i=document.getElementById('pk-path'); i.focus(); i.select();})()`);
+  await typeText(path.join(os.homedir(), "Documents", "GitHub"));
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await waitFor(`!!document.querySelector('.picker .pk-open[data-d="GenUI Agent"]')`, 8000);
   // Browse: GitHub -> › GenUI Agent -> › sandbox, then click the target folder to choose it.
   for (const name of ["GenUI Agent", "sandbox"]) {
     const ok = await clickSel(`.picker .pk-open[data-d="${name}"]`);
