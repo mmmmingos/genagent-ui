@@ -1,23 +1,25 @@
-# GenUI Agent
+# GenAgent UI
 
 A visual layer over your real agent sessions, built for coming back to many agents and catching up. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows what happened while you were away, everything the agent still needs from you (over the whole session, not only its last reply), and a timeline of the session you can click into. You answer it all in one reply. When you're not sure how to answer, **Discuss it** opens a side chat with its own agent that knows the session; the answer you settle on goes into your reply, so the main session's context only grows by that answer.
 
-GenUI is a wrapper: it runs your installed harness unmodified, so harness updates arrive by themselves. It watches through official interfaces where they exist, and the only key it ever presses in the harness's own menus is a single Esc to close a question you have answered on the side (see [How it stays a wrapper](#how-it-stays-a-wrapper)).
+GenAgent UI is a wrapper: it runs your installed harness unmodified, so harness updates arrive by themselves. It watches through official interfaces where they exist, and the only key it ever presses in the harness's own menus is a single Esc to close a question you have answered on the side (see [How it stays a wrapper](#how-it-stays-a-wrapper)).
 
 ## Start it
 
 ```
+git clone https://github.com/mmmmingos/genagent-ui.git
+cd genagent-ui
 npm install
-npm run setup     # writes the launcher and puts "GenUI Agent" on your desktop
+npm run setup     # writes the launcher and puts "GenAgent UI" on your desktop
 ```
 
-Then double-click **GenUI Agent** on the desktop. It starts a small local server (only reachable from this computer) and opens the app in its own window. Closing the window doesn't stop running sessions; double-click again to reopen it.
+Then double-click **GenAgent UI** on the desktop. It starts a small local server (only reachable from this computer) and opens the app in its own window. Closing the window doesn't stop running sessions; double-click again to reopen it.
 
 Needs Node 22+, and whichever of `claude`, `codex` and `grok` you use, already signed in.
 
 ## What it does
 
-- **Agent view**: a session started from the app is its real CLI in a terminal, with the rail beside it once there is something to show (a step, or something it needs); until then the terminal has the whole width. Claude Code sessions get GenUI's hooks for that session only; they only report (what was asked, what needs approval, when a question is answered or cancelled, when a turn ends). The rail, top to bottom:
+- **Agent view**: a session started from the app is its real CLI in a terminal, with the rail beside it once there is something to show (a step, or something it needs); until then the terminal has the whole width. Claude Code sessions get GenAgent UI's hooks for that session only; they only report (what was asked, what needs approval, when a question is answered or cancelled, when a turn ends). The rail, top to bottom:
   - **While you were away**: how many steps happened since you last looked at this session, and what they did. The same steps carry a blue dot in the timeline, below a "Since you were away" line. What you've seen is recorded when you leave the session or the window.
   - **Needs from you**: everything the agent is waiting on. First what its terminal is waiting on now (an approval, folder trust, a failed turn); then every question it asked over the whole session that you haven't answered properly, oldest first. A question asked before your latest message and still unanswered is marked "open 2h 5m" in amber. Each one links to its step. Pick an option, or write your own; your answers gather in **Your reply**, which you can edit, and **Send** types it in as one message. Answered questions clear at once.
   - **Flowchart**: the session as one timeline, top to bottom. Each message you sent starts a section headed by your own words ("You started", "You asked", "You changed direction"); the agent's steps sit under it. Work set aside when you changed direction steps off the line with a ×. The step it's on is blue while it works, amber when it needs you, grey when it's your turn. Click any step to see what happened in it: a summary, the files it touched (with lines added and removed), the commands it ran and their results, what the agent said, and what it asked and how you answered. **Show in the terminal** finds it in the scrollback.
@@ -53,20 +55,20 @@ App data (token, generated-UI cache, side discussions, logs) lives in `~/.genui-
 ## How answering works
 
 - **Everything it asked is in Needs from you**: questions in its replies (read by the AI layer, and kept until you answer them) and Claude Code's own menu questions (AskUserQuestion, with their options). Approvals stay in its terminal; the card says so and takes you there.
-- **One reply**: pick or write answers; they gather as "About your questions: 1. … 2. …". Edit it freely, add anything else, and **Send**. If a menu question is open, GenUI presses Esc once to close it, waits for Claude Code's hook to confirm, then types the reply as your next message. Questions you didn't answer stay on the list.
-- **New session**: opens the real terminal at once, in your most recent project (Ctrl+N too). Type your first message straight into it. Until you do, the terminal's top strip switches the folder or the agent; leave without typing anything and that unused session is closed, leaving no history. If GenUI doesn't know any project yet, it asks for a folder first. **Plan a goal** (on the Orchestrator page) breaks a bigger goal into steps, each run by its own agent.
+- **One reply**: pick or write answers; they gather as "About your questions: 1. … 2. …". Edit it freely, add anything else, and **Send**. If a menu question is open, GenAgent UI presses Esc once to close it, waits for Claude Code's hook to confirm, then types the reply as your next message. Questions you didn't answer stay on the list.
+- **New session**: opens a plain terminal (your shell: PowerShell 7 if installed, else Windows PowerShell; `$SHELL` elsewhere; `GENUI_SHELL` overrides it) at once, in your most recent project (Ctrl+N too). You type the commands, so you start the agent the way you like: `claude --dangerously-skip-permissions`, `claude --resume <id>`, `claude --model opus`, anything. In that shell, `claude` is a small wrapper that adds GenAgent UI's hooks and passes every argument through, so the rail and timeline follow any claude you start there (and its next one, after `/clear` or when you start another). Until you type a command, the terminal's top strip switches the folder, or from Terminal to starting Claude Code, Codex or Grok directly; leave without typing anything and that unused session is closed, leaving no history. If GenAgent UI doesn't know any project yet, it asks for a folder first. **Plan a goal** (on the Orchestrator page) breaks a bigger goal into steps, each run by its own agent.
 - **Stop** asks first; a stopped session dims its terminal and offers **Resume**, **New session here** and **Close** (Close takes it off the running list; it stays in your saved sessions).
-- When the window isn't in front, the title shows `(N) GenUI Agent` and Windows notifications appear for questions, approvals and finished turns.
+- When the window isn't in front, the title shows `(N) GenAgent UI` and Windows notifications appear for questions, approvals and finished turns.
 
 ## How it stays a wrapper
 
-GenUI launches your installed `claude` (or `codex`, `grok`) unchanged; it adds only a per-session settings file with its hooks. What it relies on, and how likely a harness update is to affect it:
+GenAgent UI launches your installed `claude` (or `codex`, `grok`) unchanged; it adds only a per-session settings file with its hooks. What it relies on, and how likely a harness update is to affect it:
 
 | What | How | If the harness changes |
 |---|---|---|
 | Question asked / answered / cancelled, approval needed, turn ended | Claude Code [hooks](https://code.claude.com/docs/en/hooks) (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Stop`, …) | Official and documented |
 | Side discussions | `claude --resume <id> --fork-session` | Official |
-| Putting an answer in | Typing it into the terminal GenUI owns, as your next message; if a question menu is open, one Esc first, confirmed by the `PostToolUseFailure` hook | Plain keyboard input |
+| Putting an answer in | Typing it into the terminal GenAgent UI owns, as your next message; if a question menu is open, one Esc first, confirmed by the `PostToolUseFailure` hook | Plain keyboard input |
 | The flowchart's content | Reading the saved transcript (`~/.claude/projects/…jsonl`) | Not a documented format: read defensively, so an unknown line is skipped rather than breaking anything |
 | Noticing sooner that a menu closed or a turn ended | Reading the screen (Claude Code's footer and menus) | A speed-up only: if the wording changes, the hooks still carry the state |
 
@@ -74,6 +76,6 @@ Claude Code's official way to push messages into a running session, [channels](h
 
 ## Security
 
-The server listens on 127.0.0.1 only and answers only to its exact host and origin. The window is opened with a one-time launch code (valid 60 seconds) and gets a per-launch cookie; requests from other local ports are refused. The install token in `~/.genui-agent/token` can only mint a launch code (and unlock the API for the test suite when `GENUI_TEST=1`). Each Claude Code session gets its own hook secret, and Codex/Grok sessions get no GenUI credentials. Text sent into a terminal is stripped of control characters. Planner and side-chat calls load only your user-level Claude settings and no MCP servers, never a project folder's own settings.
+The server listens on 127.0.0.1 only and answers only to its exact host and origin. The window is opened with a one-time launch code (valid 60 seconds) and gets a per-launch cookie; requests from other local ports are refused. The install token in `~/.genui-agent/token` can only mint a launch code (and unlock the API for the test suite when `GENUI_TEST=1`). Each Claude Code session gets its own hook secret, and Codex/Grok sessions get no GenAgent UI credentials. Text sent into a terminal is stripped of control characters. Planner and side-chat calls load only your user-level Claude settings and no MCP servers, never a project folder's own settings.
 
 The remaining limit is the usual one for local tools: a program already running as your Windows user can read your files, including that token, so it could open its own window onto the app. Don't run untrusted code as your own user.

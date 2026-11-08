@@ -4,7 +4,7 @@
 // - whether each message of yours changed direction, and which work that set aside (dropped, with why);
 // - the asks: every question the agent put to you, kept over the whole session until you answer it
 //   properly. An answer that skipped it leaves it open, so it stays on "Needs from you".
-// It only grows: notes and settled asks are never rewritten. Answers you send from GenUI are recorded
+// It only grows: notes and settled asks are never rewritten. Answers you send from GenAgent UI are recorded
 // at once (answers.json), so an ask clears without waiting for the model.
 import fs from "node:fs";
 import path from "node:path";
@@ -69,7 +69,7 @@ const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); }
 
 export function emptyNotes() { return { sections: {}, steps: {}, dropped: {}, asks: [], seq: 0, cursor: 0 }; }
 
-// Answers sent from GenUI, by ask id: they settle an ask at once, before the model has read the reply.
+// Answers sent from GenAgent UI, by ask id: they settle an ask at once, before the model has read the reply.
 function sentAnswers(file) { return readJson(answersPath(file)) || {}; }
 export function recordAnswers(file, answers) {
   const all = sentAnswers(file);
@@ -164,7 +164,7 @@ export async function generate(harness, file, { force = false, midTurn = false }
     let notes = !force && prev && prev.notes ? prev.notes : emptyNotes();
     // A transcript that got shorter (compacted, rewritten) is read again from the start.
     if (notes.cursor > ev.length) notes = emptyNotes();
-    // Answers you sent from GenUI settle their asks before the model reads on.
+    // Answers you sent from GenAgent UI settle their asks before the model reads on.
     const sent = sentAnswers(file);
     notes.asks = notes.asks.map((a) => (a.state === "open" && sent[a.id] ? { ...a, state: "answered", answer: sent[a.id].answer, by: "you" } : a));
     const from = notes.cursor, open = notes.asks.filter((a) => a.state === "open");

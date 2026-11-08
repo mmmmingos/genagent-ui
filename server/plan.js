@@ -37,7 +37,7 @@ async function planOnce({ goal, cwd }) {
   const harnesses = Object.entries(have).filter(([, ok]) => ok).map(([k]) => k).join(", ");
   const r = await claudeCall({
     model: MODELS.plan, schema: SCHEMA, tools: "Read,Grep,Glob", userSettingsOnly: true, noPersist: true, lane: "plan", cwd: cwd && fs.existsSync(cwd) ? cwd : undefined, timeoutMs: 300000,
-    appendSystem: "You are GenUI Agent's orchestrator. You plan; you never edit files or run commands.",
+    appendSystem: "You are GenAgent UI's orchestrator. You plan; you never edit files or run commands.",
     prompt: `Plan this goal as a short flow of steps (3-8). You may glance at the project folder to ground the plan, but keep it quick.
 Goal: ${goal}
 Project folder: ${cwd || "(none)"}
@@ -51,7 +51,7 @@ For each step, predict the questions it will need answered (owner "you" or a nam
 export function stepPrompt(p, index, answers = {}) {
   const step = p.steps[index];
   const lines = [
-    `You are a fresh worker started by GenUI Agent's orchestrator.`,
+    `You are a fresh worker started by GenAgent UI's orchestrator.`,
     `Overall goal: ${p.goal}`,
     `The plan:\n${p.steps.map((s, i) => `${i + 1}. ${s.label} (${s.harness})${i === index ? "  <- your step" : ""}`).join("\n")}`,
     `Your step: ${step.label}. ${step.why || ""}`,

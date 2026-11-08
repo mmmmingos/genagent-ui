@@ -1,6 +1,6 @@
 # One human, many agents: how orchestration UIs are designed (November 2026)
 
-Research for GenUI Agent, 4 November 2026. The question: how do other products let one person run and supervise many coding agents at once (Claude Code, Codex, Gemini, Grok and others), and what does an orchestrator layer do there? The aim is to rethink GenUI Agent's Orchestrator page and agent view.
+Research for GenAgent UI, 4 November 2026. The question: how do other products let one person run and supervise many coding agents at once (Claude Code, Codex, Gemini, Grok and others), and what does an orchestrator layer do there? The aim is to rethink GenAgent UI's Orchestrator page and agent view.
 
 **Method.** I ran 14 searches of X (through Grok, posts mostly June to November 2026), one Reddit Answers question, and checked product pages, docs and repos for every tool named in the brief. Everything from X and Reddit is what people *say*. Where a post comes from a tool's own maker or is a sales pitch, I say so. Prasenjit Sarkar (@stretchcloud), for example, posts about competitors a lot while promoting his own tool, Campfire. Replies from the @grok account are an assistant talking, not user reviews.
 
@@ -231,7 +231,7 @@ The lane runs diff → inline comments → approve / revise / reject → PR → 
 
 ---
 
-## 5. Synthesis 3: what GenUI Agent should take, and what to avoid
+## 5. Synthesis 3: what GenAgent UI should take, and what to avoid
 
 GenUI already has several pieces others lack:
 - **real, unmodified harnesses across vendors** (Claude Code, Codex, Grok);

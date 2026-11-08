@@ -2,7 +2,7 @@
 
 Sources: `videos/02-merge-conflicts.mp4` (light, 30.0 s) and `videos/06-merge-dark.mp4` (dark, 31.4 s). Frames: `frames/02-merge-conflicts/t001–t030`, `frames/06-merge-dark/t001–t031`. Extra full-resolution stills, contrast crops and 10–15 fps contact sheets are in each video's `extra/` folder (files prefixed `full_`, `f_`, `h_`, `dk_`, `ml_`).
 
-This is the primary reference for GenUI Agent. Everything below is measured from pixels unless it is marked as an estimate (~).
+This is the primary reference for GenAgent UI. Everything below is measured from pixels unless it is marked as an estimate (~).
 
 ---
 

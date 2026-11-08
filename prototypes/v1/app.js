@@ -1,4 +1,4 @@
-// GenUI Agent, generation one. Everything is in memory; nothing talks to a real agent.
+// GenAgent UI, generation one. Everything is in memory; nothing talks to a real agent.
 (function () {
   const S = window.SESSIONS, Q = window.QUESTIONS, D = window.DISCUSS;
   const $ = (id) => document.getElementById(id);

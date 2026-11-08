@@ -558,7 +558,7 @@ const sorted = () => AGENTS.slice().sort((x, y) => order[x.state] - order[y.stat
 function renderSide() {
   const total = AGENTS.reduce((k, a) => k + openNeeds(a).length, 0);
   $("#side").innerHTML = `
-    <div class="logo">GenUI Agent <span class="tag">sample</span></div>
+    <div class="logo">GenAgent UI <span class="tag">sample</span></div>
     <button class="srow" data-act="new">${icon("plus")}<span class="st">New session</span></button>
     <button class="srow ${S.view === "dash" ? "on" : ""}" data-act="dash">${icon("grid")}<span class="st">Orchestrator</span>${total ? `<span class="badge">${total}</span>` : ""}</button>
     <div class="sgroup">Sessions</div>

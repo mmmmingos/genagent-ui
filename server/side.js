@@ -17,7 +17,7 @@ const sides = new Map();
 const children = new Map(); // side id -> running claude process
 
 const READ_ONLY_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch";
-const RULES = `You are in a SIDE DISCUSSION opened from GenUI Agent. The user wants to think something through with you before answering the main agent. Your job is to advise, not act:
+const RULES = `You are in a SIDE DISCUSSION opened from GenAgent UI. The user wants to think something through with you before answering the main agent. Your job is to advise, not act:
 - Do not edit files, run commands or take actions. You may read files and search to check facts.
 - Keep replies short and conversational: a few sentences, plain language, concrete.
 - Help the user reach a clear decision. Point out trade-offs and what the main agent will need to know. When it is a question the main agent asked with options, end with a clear recommendation among them.

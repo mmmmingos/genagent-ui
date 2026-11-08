@@ -1,4 +1,4 @@
-# GenUI Agent: product brief
+# GenAgent UI: product brief
 
 The source of truth for what we're building. Read this first; the owner corrects it.
 

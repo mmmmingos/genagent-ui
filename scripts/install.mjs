@@ -1,4 +1,4 @@
-// One-time setup: write the launcher, make an icon, and put "GenUI Agent" on the desktop.
+// One-time setup: write the launcher, make an icon, and put "GenAgent UI" on the desktop.
 // Run: npm run setup
 import fs from "node:fs";
 import path from "node:path";
@@ -10,12 +10,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const node = process.execPath;
 
 // 1. Launcher: starts the server hidden (or reuses a running one) and opens the app window.
-const vbs = `' GenUI Agent launcher (written by scripts/install.mjs)
+const vbs = `' GenAgent UI launcher (written by scripts/install.mjs)
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = "${ROOT}"
 sh.Run """${node}"" ""${path.join(ROOT, "server", "index.js")}"" --open", 0, False
 `;
-fs.writeFileSync(path.join(ROOT, "GenUI Agent.vbs"), vbs);
+fs.writeFileSync(path.join(ROOT, "GenAgent UI.vbs"), vbs);
 
 // 2. Icon: render the SVG to PNG with the system browser, then wrap it in an .ico.
 const ico = path.join(ROOT, "web", "icon.ico");
@@ -40,15 +40,15 @@ if (browsers.length) {
 // 3. Desktop shortcut.
 const ps = `
 $d = [Environment]::GetFolderPath('Desktop')
-$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'GenUI Agent.lnk'))
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'GenAgent UI.lnk'))
 $s.TargetPath = "$env:WINDIR\\System32\\wscript.exe"
-$s.Arguments = '"${path.join(ROOT, "GenUI Agent.vbs")}"'
+$s.Arguments = '"${path.join(ROOT, "GenAgent UI.vbs")}"'
 $s.WorkingDirectory = '${ROOT}'
 ${fs.existsSync(ico) ? `$s.IconLocation = '${ico},0'` : ""}
-$s.Description = 'GenUI Agent'
+$s.Description = 'GenAgent UI'
 $s.Save()
-Write-Output (Join-Path $d 'GenUI Agent.lnk')`;
+Write-Output (Join-Path $d 'GenAgent UI.lnk')`;
 const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8" }).trim();
-console.log("Launcher:", path.join(ROOT, "GenUI Agent.vbs"));
+console.log("Launcher:", path.join(ROOT, "GenAgent UI.vbs"));
 console.log("Shortcut:", out);
-console.log("Double-click 'GenUI Agent' on your desktop to start.");
+console.log("Double-click 'GenAgent UI' on your desktop to start.");

@@ -1,6 +1,6 @@
-# Generative UI today: how the systems work, and what GenUI Agent should do
+# Generative UI today: how the systems work, and what GenAgent UI should do
 
-Research for GenUI Agent, November 2026. The question behind it: should the flowchart beside the terminal be produced by AI, by code, or both, and is there a protocol or pattern worth copying?
+Research for GenAgent UI, November 2026. The question behind it: should the flowchart beside the terminal be produced by AI, by code, or both, and is there a protocol or pattern worth copying?
 
 Short answer: **both, in layers.** Code builds the skeleton from the transcript the moment anything happens. The model only annotates it: it groups, names and marks intent, and it refers to nodes by IDs that code assigned. Almost every production system below draws the same line. Deterministic code owns structure, identity, layout and state. The model picks from a fixed vocabulary and fills in content.
 
@@ -55,7 +55,7 @@ A2UI is a declarative UI spec led by Google, with CopilotKit as a launch partner
 - **Streaming:** "resilient streaming". The SDK parses and validates JSON as it streams, so components render before the full block arrives. In v0.8 the client buffered messages until `beginRendering` arrived.
 - **Code vs model:** the catalog (code) defines what can exist. The model composes and fills it.
 
-The flat, ID-referenced, update-by-ID shape fits a flowchart that grows over time. GenUI Agent's `flowtree.js` ops (`add` with `parent`, then `state` and `rename` by ID) are already close to it.
+The flat, ID-referenced, update-by-ID shape fits a flowchart that grows over time. GenAgent UI's `flowtree.js` ops (`add` with `parent`, then `state` and `rename` by ID) are already close to it.
 
 ### 1.4 MCP-UI, MCP Apps and the OpenAI Apps SDK
 
@@ -125,7 +125,7 @@ This is research and product work (Gemini app and Search AI Mode, November 2025)
 
 Human raters strongly preferred it to markdown, but only when generation time was ignored. It "can sometimes take a minute or more". This is the clearest evidence that full code generation looks rich but is too slow for anything live.
 
-### 1.12 Agent progress and plan views (closest to GenUI Agent)
+### 1.12 Agent progress and plan views (closest to GenAgent UI)
 
 - **Claude Code's own task list.** The agent calls a tool, and the harness renders a list. The old `TodoWrite` sent the whole list on every call. Current Claude Code splits it into `TaskCreate` (one per item: `subject`, `activeForm`), `TaskUpdate` (`taskId`, `status` of `pending`, `in_progress`, `completed` or `deleted`), `TaskGet` and `TaskList`. The new task's ID arrives only in the tool result (`tool_use_result.task.id`). Claude Code also repairs key names such as `id` or `task_id` to `taskId` before running the tool, but the transcript shows the raw input, so read fields defensively. **Important:** from Claude Code v2.1.268 these tools are on by default only for Opus 4.7, Sonnet 4.6, Haiku 4.5 and earlier. Newer models get no task list unless the session opts in, for example with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` ([Track todos, Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/todo-tracking)).
 - **Codex `update_plan`.** The model sends `{ explanation?, plan: [{ step, status }] }` with `pending`, `in_progress` or `completed`, and the TUI renders it ([codex-protocol `plan_tool.rs`](https://docs.rs/crate/codex-protocol/latest/source/src/plan_tool.rs)). A third-party write-up says it became opt-in (`[tools.update_plan] enabled = true`) in late August 2026 ([Daniel Vaughan](https://codex.danielvaughan.com/2026/08/31/codex-cli-update-plan-tool-opt-in-external-planning-competing-surfaces/)). I have not confirmed this against OpenAI's own docs, so check it there.
@@ -181,12 +181,12 @@ Even the "open-ended" systems keep the template in code (MCP Apps predeclares te
 - **Snapshot plus delta.** AG-UI `StateSnapshot` and `StateDelta` (JSON Patch), A2UI data-model updates, json-render SpecStream patches. Snapshots repair drift, and deltas keep updates cheap.
 - **Flat adjacency lists instead of nested trees** (A2UI, json-render, OpenUI). The model can emit or update one node at a time without restating the tree.
 - **Separate structure from data.** Binding to data paths lets values change without re-emitting structure.
-- **Append-only history plus mutable status.** Plan tools and AG-UI messages are never rewritten. Only `status` fields change. GenUI Agent's `flowtree.js` already enforces this: finished and dropped nodes are frozen, and only steps not yet started can be renamed.
+- **Append-only history plus mutable status.** Plan tools and AG-UI messages are never rewritten. Only `status` fields change. GenAgent UI's `flowtree.js` already enforces this: finished and dropped nodes are frozen, and only steps not yet started can be renamed.
 - **Partial-input rendering.** AI SDK `input-streaming` and assistant-ui `argsText` let a skeleton fill in while arguments stream.
 
 ---
 
-## 3. Recommendations for GenUI Agent
+## 3. Recommendations for GenAgent UI
 
 What exists today (from the code): `server/genui.js` asks Sonnet to return `ops` on a tree that only grows (`server/flowtree.js`), plus cards from a fixed kit. An uncommitted `server/flowdraft.js` builds an "Instant" tree from the transcript with no model call. `web/app.js` currently offers a toggle between **AI** and **Instant**.
 
@@ -203,7 +203,7 @@ Make this the only source of **structure** and **state**. It should be correct w
    - folding becomes a **view** decision (collapse older steps in the renderer) instead of deleting data.
 3. **Use the agent's own task list when it has one, and expect it often won't.**
    - **Bug: Claude's current task tools are ignored.** `transcripts.js` reads only `TodoWrite`. `flowdraft.js` already drops `TaskCreate` and `TaskUpdate` as "the agent's own list", so on current Claude Code the list disappears entirely. Add a small reducer: `TaskCreate` waits for its `tool_result` to get the task ID, `TaskUpdate` changes status or removes on `deleted`, and the `taskId`, `id` and `task_id` keys are read defensively, as the [Agent SDK docs](https://code.claude.com/docs/en/agent-sdk/todo-tracking) show.
-   - **Newer models emit no task list by default** (Claude), and Codex's `update_plan` may now be opt-in. For sessions GenUI Agent **starts**, decide whether to set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (and the Codex equivalent). It gives a free, model-authored plan at the cost of nudging the agent's behaviour. Make it a setting, not a silent default.
+   - **Newer models emit no task list by default** (Claude), and Codex's `update_plan` may now be opt-in. For sessions GenAgent UI **starts**, decide whether to set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (and the Codex equivalent). It gives a free, model-authored plan at the cost of nudging the agent's behaviour. Make it a setting, not a silent default.
    - Without a task list, the tool-call grouping in `flowdraft.js` is the fallback. That is why section 3.2 matters.
 4. **Group tool calls with deterministic rules, as `flowdraft.js` already starts to:**
    - runs of reads become "Read 4 files";
@@ -275,7 +275,7 @@ Constrain it so it can never break the skeleton:
 3. Make the skeleton incremental (byte-offset tail plus reducer) and broadcast deltas instead of whole trees.
 4. Rewrite the `genui.js` schema so ops reference skeleton IDs (`group`, `label`, `goal`, `plan`), with validation in `flowtree.js`. Remove the AI/Instant toggle.
 5. Add the entry, regroup and label animations and the streaming label for the running step.
-6. Decide on the task-tools setting for sessions GenUI Agent starts.
+6. Decide on the task-tools setting for sessions GenAgent UI starts.
 
 ---
 

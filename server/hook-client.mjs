@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Claude Code runs this for each hook event in sessions GenUI Agent started. It tells the app what
+// Claude Code runs this for each hook event in sessions GenAgent UI started. It tells the app what
 // happened and returns at once: questions and approvals stay in Claude Code's own menus.
 const port = process.env.GENUI_PORT, token = process.env.GENUI_HOOK_TOKEN, sid = process.env.GENUI_SID;
 let raw = "";

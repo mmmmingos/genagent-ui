@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import pty from "@lydell/node-pty";
 import xtermHeadless from "@xterm/headless";
 import { DATA, PORT, ROOT, STORES, cleanEnv, hookSecret, ID_RE } from "./config.js";
-import { resolveBin, launchArgs, HARNESSES } from "./harness.js";
+import { resolveBin, launchArgs, shellLaunch, HARNESSES } from "./harness.js";
 import { readSession } from "./transcripts.js";
 
 export const bus = new EventEmitter();
@@ -16,7 +16,7 @@ const REG = path.join(DATA, "live.json");
 const sessions = new Map(); // id -> session
 const BUF_MAX = 400_000;
 
-// One settings file adds GenUI's hooks to the sessions it starts (only those sessions). The hooks
+// One settings file adds GenAgent UI's hooks to the sessions it starts (only those sessions). The hooks
 // only report: questions and approvals stay in Claude Code's own menus, in its terminal.
 const SETTINGS = path.join(DATA, "claude-hooks.json");
 function writeHookSettings() {
@@ -25,13 +25,14 @@ function writeHookSettings() {
   const s = { hooks: {
     SessionStart: h(""), UserPromptSubmit: h(""), Stop: h(""), Notification: h(""),
     PreToolUse: h("AskUserQuestion"), PostToolUse: h("AskUserQuestion"), PostToolUseFailure: h("AskUserQuestion"), PermissionRequest: h(""), PreCompact: h(""),
+    SessionEnd: h(""),
   } };
   fs.writeFileSync(SETTINGS, JSON.stringify(s, null, 2));
 }
 writeHookSettings();
 
 function persist() {
-  const rows = [...sessions.values()].map((s) => ({ id: s.id, harness: s.harness, cwd: s.cwd, name: s.name, file: s.file, createdAt: s.createdAt, origin: s.origin, goalHint: s.goalHint }));
+  const rows = [...sessions.values()].map((s) => ({ id: s.id, harness: s.harness, cwd: s.cwd, name: s.name, file: s.file, createdAt: s.createdAt, origin: s.origin, goalHint: s.goalHint, shell: !!s.shell, claudeId: s.claudeId || null }));
   const old = loadRegistry().filter((r) => !sessions.has(r.id));
   fs.writeFileSync(REG, JSON.stringify([...rows, ...old].slice(0, 200), null, 2));
 }
@@ -40,6 +41,8 @@ export function loadRegistry() {
 }
 
 const plain = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "").replace(/\x1b[()][0-9A-B]/g, "");
+
+const once = (fn) => { let done = false; return (...a) => { if (!done) { done = true; fn(...a); } }; };
 
 export function list() { return [...sessions.values()].map(summary); }
 export function get(id) { return sessions.get(id); }
@@ -56,6 +59,9 @@ export function summary(s) {
     terminalNeeds: s.terminalNeeds || null, context: s.context || null, lastActivity: s.lastActivity, stopped: !!s.stopped,
     // Opened from New session and not sent anything yet: leaving it discards it.
     fresh: s.alive && !s.used,
+    // A Terminal session: your shell. Once you start claude in it, harness becomes "claude" and the
+    // rail follows that claude session (claudeId), while the shell stays yours.
+    shell: !!s.shell, claudeId: s.claudeId || null,
   };
 }
 
@@ -74,24 +80,33 @@ function changed(s, what = "session") {
 // Start a harness in a terminal. Returns the session.
 export function start({ harness, cwd, prompt, name, model, resume, fork, file, origin = "app", goalHint }) {
   if (!HARNESSES[harness]) throw new Error("Unknown harness");
-  const bin = resolveBin(HARNESSES[harness].bin);
-  if (!bin) throw new Error(`${HARNESSES[harness].label} isn't installed`);
+  const shell = harness === "terminal";
+  const bin = shell ? null : resolveBin(HARNESSES[harness].bin);
+  if (!shell && !bin) throw new Error(`${HARNESSES[harness].label} isn't installed`);
   if (!cwd || !fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error(`Folder not found: ${cwd}`);
   if (resume && !ID_RE.test(resume)) throw new Error("Bad session id");
   if (model && !/^[\w.\[\]-]{1,60}$/.test(model)) throw new Error("Bad model name");
   const id = resume && harness === "claude" && !fork ? resume : crypto.randomUUID();
   if (sessions.get(id)?.alive) throw new Error("That session is already running here");
-  const args = launchArgs(harness, { id, settingsFile: harness === "claude" ? SETTINGS : null, prompt, resume, fork, name: name ? String(name).replace(/[\r\n]/g, " ").slice(0, 80) : "", model });
-  // Only Claude Code sessions get hook variables, and only their own per-session secret.
-  const extra = harness === "claude" ? { GENUI_PORT: String(PORT), GENUI_HOOK_TOKEN: hookSecret(id), GENUI_SID: id } : {};
-  const p = pty.spawn(bin.file, [...bin.pre, ...args], { name: "xterm-256color", cols: 120, rows: 36, cwd, env: cleanEnv(extra), useConpty: true });
+  // Only Claude Code sessions (and shells, for the claude you start in them) get hook variables, and
+  // only their own per-session secret.
+  const extra = harness === "claude" || shell ? { GENUI_PORT: String(PORT), GENUI_HOOK_TOKEN: hookSecret(id), GENUI_SID: id } : {};
+  let file0, args0;
+  if (shell) { const sh = shellLaunch(SETTINGS, DATA); file0 = sh.file; args0 = sh.args; Object.assign(extra, sh.env); }
+  else { file0 = bin.file; args0 = [...bin.pre, ...launchArgs(harness, { id, settingsFile: harness === "claude" ? SETTINGS : null, prompt, resume, fork, name: name ? String(name).replace(/[\r\n]/g, " ").slice(0, 80) : "", model })]; }
+  const p = pty.spawn(file0, args0, { name: "xterm-256color", cols: 120, rows: 36, cwd, env: cleanEnv(extra), useConpty: true });
   const s = {
-    id, harness, cwd, name: name || "", model, origin, goalHint: goalHint || prompt || "", pty: p, alive: true, exitCode: null,
-    status: prompt ? "working" : "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
+    id, harness, shell, claudeId: null, cwd, name: name || "", model, origin, goalHint: goalHint || prompt || "", pty: p, alive: true, exitCode: null,
+    status: prompt && !shell ? "working" : "starting", buf: "", screen: "", createdAt: Date.now(), startedAt: Date.now(), lastOutput: Date.now(), lastActivity: Date.now(),
     file: null, ask: null, perm: null, native: null, terminalNeeds: null, hooked: false, resumeOf: resume || null, used: !!(prompt || resume),
     vt: new xtermHeadless.Terminal({ cols: 120, rows: 36, allowProposedApi: true, scrollback: 200 }),
   };
   sessions.set(id, s);
+  // A shell is ready at its first output; a command given up front is typed in once it is.
+  if (shell) p.onData(once(() => {
+    if (s.status === "starting") { s.status = "idle"; changed(s); }
+    if (prompt) setTimeout(() => { if (s.alive) s.pty.write(String(prompt).replace(/[\x00-\x1f\x7f-\x9f]/g, " ") + "\r"); }, 400);
+  }));
   p.onData((d) => {
     s.buf += d;
     if (s.buf.length > BUF_MAX) s.buf = s.buf.slice(-BUF_MAX);
@@ -109,9 +124,10 @@ export function start({ harness, cwd, prompt, name, model, resume, fork, file, o
     changed(s);
   });
   if (!prompt && harness !== "claude") setTimeout(() => { if (s.status === "starting") { s.status = "idle"; changed(s); } }, 4000);
-  // Resuming (not forking) keeps writing to the saved transcript, so bind it directly.
+  // Resuming (not forking) keeps writing to the saved transcript, so bind it directly. A shell has no
+  // transcript until claude runs in it; its hooks say where it is.
   if (file && resume && !fork) { s.file = file; setTimeout(() => watch(s), 300); }
-  else findTranscript(s);
+  else if (!shell) findTranscript(s);
   persist();
   changed(s, "started");
   return s;
@@ -282,6 +298,8 @@ function watch(s) {
 export function write(id, data) {
   const s = sessions.get(id); if (!s?.alive) return;
   s.pty.write(data);
+  // A shell counts as used at its first command: leaving it after that keeps it.
+  if (s.shell && !s.used && /\r/.test(data)) { s.used = true; changed(s); }
   // Answering in the terminal itself: the "waiting in the terminal" card has done its job.
   if (s.terminalNeeds && s.terminalNeeds.kind === "menu" && /[\r\n]/.test(data)) { s.terminalNeeds = null; s.status = "working"; changed(s); }
 }
@@ -338,6 +356,14 @@ export function onHook(id, ev) {
   const s = sessions.get(id);
   if (!s) return;
   const name = ev.hook_event_name;
+  if (s.shell) {
+    // claude exited back to the shell: the timeline stays, the prompt is yours again.
+    if (name === "SessionEnd") { s.hooked = false; s.ask = null; s.perm = null; s.native = null; s.terminalNeeds = null; s.status = "idle"; changed(s); return; }
+    // claude started in the shell (or /clear, or --resume): follow that session from now on.
+    s.harness = "claude";
+    if (typeof ev.session_id === "string" && ID_RE.test(ev.session_id) && (name === "SessionStart" || !s.claudeId)) s.claudeId = ev.session_id;
+    if (name === "SessionStart" && ev.transcript_path && ev.transcript_path !== s.file && fs.existsSync(path.dirname(ev.transcript_path))) { s.file = ev.transcript_path; persist(); watch(s); }
+  } else if (name === "SessionEnd") return;
   s.hooked = true;
   if (ev.transcript_path && !s.file && fs.existsSync(path.dirname(ev.transcript_path))) { s.file = ev.transcript_path; persist(); watch(s); }
   if (name === "SessionStart") { if (s.status === "starting") s.status = "idle"; s.terminalNeeds = null; }
@@ -359,7 +385,7 @@ export function onHook(id, ev) {
   changed(s);
 }
 
-// The one key GenUI presses in Claude Code's menus: Esc, once, to close an open AskUserQuestion menu
+// The one key GenAgent UI presses in Claude Code's menus: Esc, once, to close an open AskUserQuestion menu
 // so a worked-out answer can be typed as the user's next message. The hook confirms it closed first.
 export async function answerQuestion(id, text) {
   const s = sessions.get(id);

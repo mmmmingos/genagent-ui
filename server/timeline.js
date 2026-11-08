@@ -168,7 +168,7 @@ export function buildTimeline(events, { cwd = "", working = false } = {}) {
       if (s.cmds.length < CMDS_MAX) s.cmds.push({ c: a.search || a.url || "", r: r.text, ok: r.ok });
       if (a.key === "web" && s.n > 1) s.label = `Search the web ×${s.n}`;
     } else if (a.kind === "ask") {
-      // Answered in the menu: its result has the answers. Cancelled (Esc, as GenUI does before typing
+      // Answered in the menu: its result has the answers. Cancelled (Esc, as GenAgent UI does before typing
       // your answer): your next message is the answer.
       const res = e.id && results.get(e.id), got = res && !res.error ? askAnswers(res.text) : [];
       s.ask = { qs: a.qs, answered: !!res, answers: got, cancelled: !!(res && (res.error || !got.length)) };

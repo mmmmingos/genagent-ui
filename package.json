@@ -1,5 +1,5 @@
 {
-  "name": "genui-agent",
+  "name": "genagent-ui",
   "version": "0.1.0",
   "private": true,
   "description": "A generative-UI wrapper over real Claude Code, Codex and Grok sessions",

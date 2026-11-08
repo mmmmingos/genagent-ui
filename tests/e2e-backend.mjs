@@ -58,7 +58,7 @@ try {
   let ask = null;
   for (let i = 0; i < 120 && !ask; i++) { await sleep(1000); const cur = (await api("/api/state")).live.find((x) => x.id === s.id); if (cur.pendingAsk && cur.native === "ask") ask = cur.pendingAsk; }
   check("question open in Claude Code's own menu, with its questions known", !!ask && ask.questions.length === 1);
-  // A worked-out answer: GenUI presses Esc once to close the menu, the hook confirms, then it is typed as the user's message.
+  // A worked-out answer: GenAgent UI presses Esc once to close the menu, the hook confirms, then it is typed as the user's message.
   if (ask) await api(`/api/sessions/${s.id}/answer`, { text: "About your question: Teal, from the side chat." });
   const after = (await api("/api/state")).live.find((x) => x.id === s.id);
   check("the open question was closed before typing (hook confirmed)", !after.pendingAsk);

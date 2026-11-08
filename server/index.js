@@ -1,4 +1,4 @@
-// GenUI Agent server: serves the app, streams terminals, receives Claude Code hooks.
+// GenAgent UI server: serves the app, streams terminals, receives Claude Code hooks.
 // Binds to 127.0.0.1 only. Requests must name this exact host and port, come from this exact origin,
 // and carry either the window's per-launch session cookie or the install token (tests and tools).
 import http from "node:http";
@@ -101,7 +101,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(302, { "set-cookie": `genui=${WINDOW_SECRET}; HttpOnly; SameSite=Strict; Path=/`, location: "/" });
         return res.end();
       }
-      if (!/(?:^|;\s*)genui=/.test(req.headers.cookie || "") || !authedCookie(req)) { res.writeHead(403, { "content-type": "text/plain" }); return res.end("Open GenUI Agent from its desktop shortcut."); }
+      if (!/(?:^|;\s*)genui=/.test(req.headers.cookie || "") || !authedCookie(req)) { res.writeHead(403, { "content-type": "text/plain" }); return res.end("Open GenAgent UI from its desktop shortcut."); }
       return serveFile(res, path.join(WEB, "index.html"));
     }
     if (p.startsWith("/web/")) return serveFile(res, inside(WEB, p.slice(4)));
@@ -149,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       if (!file) return json(res, 404, { error: "Session not found" });
       return json(res, 200, await generate(B.harness, file, { force: !!B.force }));
     }
-    // Answers sent from GenUI's reply: their asks clear at once, before the model has read the reply.
+    // Answers sent from GenAgent UI's reply: their asks clear at once, before the model has read the reply.
     if (p === "/api/asks" && req.method === "POST") {
       const file = findFile(B.harness, B.file);
       if (!file) return json(res, 404, { error: "Session not found" });
@@ -159,7 +159,9 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/side" && req.method === "POST") {
       const file = B.file ? findFile(B.harness, B.file) : null;
       if (B.mainId) checkId(B.mainId);
-      return json(res, 200, side.open({ harness: B.harness, file, mainId: B.mainId, cwd: B.cwd, topic: B.topic, first: B.first ? String(B.first).slice(0, 8000) : "" }));
+      // A Terminal session's claude has its own session id; that is the one to fork.
+      const mainId = B.mainId ? live.get(B.mainId)?.claudeId || B.mainId : null;
+      return json(res, 200, side.open({ harness: B.harness, file, mainId, cwd: B.cwd, topic: B.topic, first: B.first ? String(B.first).slice(0, 8000) : "" }));
     }
     const sm = p.match(/^\/api\/side\/([^/]+)(?:\/(\w+))?$/);
     if (sm) {
@@ -300,6 +302,6 @@ if (await alreadyRunning()) {
 }
 server.listen(PORT, HOST, () => {
   log(`listening on ${HOST}:${PORT}`);
-  console.log(`GenUI Agent on ${ORIGIN}`);
+  console.log(`GenAgent UI on ${ORIGIN}`);
   if (wantOpen) openWindow();
 });

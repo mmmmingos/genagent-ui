@@ -1,4 +1,4 @@
-// Sample sessions for GenUI Agent generation one. Shapes are what the companion
+// Sample sessions for GenAgent UI generation one. Shapes are what the companion
 // would build from each session's transcript; values are illustrative.
 //
 // Step state: done | current (needs answers) | running | next

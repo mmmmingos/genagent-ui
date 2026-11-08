@@ -1,4 +1,4 @@
-// GenUI Agent — the window. Plain modules, no build step.
+// GenAgent UI — the window. Plain modules, no build step.
 // Rendering: each region is rebuilt as an HTML string and morphed into place (morphdom), so focus,
 // typed text and scroll positions survive live updates and only genuinely new elements animate in.
 import morphdom from "/vendor/morphdom/morphdom-esm.js";
@@ -13,14 +13,14 @@ if (PANE) document.documentElement.classList.add("pane-mode");
 const api = async (path, body) => {
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (r.status === 403 && !S.authLost) { S.authLost = true; const b = document.createElement("div"); b.className = "authlost"; b.textContent = "GenUI Agent restarted. Close this window and open it again from the desktop shortcut."; document.body.appendChild(b); }
+  if (r.status === 403 && !S.authLost) { S.authLost = true; const b = document.createElement("div"); b.className = "authlost"; b.textContent = "GenAgent UI restarted. Close this window and open it again from the desktop shortcut."; document.body.appendChild(b); }
   if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
   return j;
 };
 
 // ---- State ---------------------------------------------------------------------
 const S = {
-  harnesses: {}, labels: { claude: "Claude Code", codex: "Codex", grok: "Grok" },
+  harnesses: {}, labels: { terminal: "Terminal", claude: "Claude Code", codex: "Codex", grok: "Grok" },
   live: new Map(), saved: [],
   gens: new Map(), genBusy: new Set(), genMid: new Set(), genErr: new Map(),
   views: new Map(), liveTail: new Map(),
@@ -34,7 +34,7 @@ const S = {
   seen: loadSeen(), look: null, appAway: null, blurAt: 0, dashTab: "agents", viewFetch: new Set(),
   sides: new Map(), sideOpen: false,
   plans: loadPlans(),
-  ng: { goal: "", cwd: "", plan: null, busy: false, err: "", answers: {}, startedAt: 0, harness: "claude", going: false },
+  ng: { goal: "", cwd: "", plan: null, busy: false, err: "", answers: {}, startedAt: 0, harness: "terminal", going: false },
   picker: null, toolsOpen: new Set(), inflight: new Set(), armed: null, sentItems: loadSent(), authLost: false,
 };
 function loadSent() { try { return new Map(JSON.parse(localStorage.getItem("genui.sent") || "[]")); } catch { return new Map(); } }
@@ -145,7 +145,7 @@ function render() {
   if (sc && S.forceBottom && sc.scrollHeight > 0) S.forceBottom = false;
   // Window title shows how many sessions need you, so it's visible from the taskbar.
   const n = [...S.live.values()].filter((l) => liveState(l) === "needs").length;
-  document.title = n ? `(${n}) GenUI Agent` : "GenUI Agent";
+  document.title = n ? `(${n}) GenAgent UI` : "GenAgent UI";
 }
 
 // ---- Helpers ---------------------------------------------------------------------
@@ -155,9 +155,13 @@ const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
 const hid = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return (h >>> 0).toString(36); };
 function title(l) {
   const g = genFor(l.file), tl = (S.liveTail.get(l.id) || {}).timeline, first = tl && tl.sections[0];
-  return (g && g.title) || l.name || (first && first.label) || clip(l.goalHint || "", 60) || "New session";
+  return (g && g.title) || l.name || (first && first.label) || clip(l.goalHint || "", 60) || (l.shell ? "Terminal" : "New session");
 }
-const engShort = (h) => ({ claude: "Claude", codex: "Codex", grok: "Grok" }[h] || h);
+const engShort = (h) => ({ terminal: "Terminal", claude: "Claude", codex: "Codex", grok: "Grok" }[h] || h);
+// What a new session like this one starts: a Terminal session stays a terminal, even once claude runs in it.
+const kindOf = (ref) => (ref && (ref.shell || (ref.l && ref.l.shell)) ? "terminal" : ref && ref.harness);
+// The agents a New session can start, in the order the picker cycles through them.
+const startable = () => ["terminal", "claude", "codex", "grok"].filter((h) => S.harnesses[h]);
 const refKey = (ref) => (ref.kind === "live" ? "L:" + ref.id : "F:" + ref.file);
 const nowAgo = (t) => ago(t).replace(" ago", "");
 
@@ -535,8 +539,8 @@ function needCard(ref, n, i, total, ro) {
 function replyHTML(ref, rep) {
   const answered = rep.filter((n) => answerOf(ref, n).trim()).length, left = rep.length - answered;
   const menuLeft = rep.some((n) => n.kind === "menu" && !answerOf(ref, n).trim()), blocked = menuLeft && answered > 0;
-  const note = blocked ? "Its question menu is open: answer that one too, so GenUI can close the menu and send everything together."
-    : `${ref.l.pendingAsk ? "GenUI closes its question menu (Esc), then types this as your next message." : "Typed into the session as your next message."}${left && answered ? ` ${plural(left, "question")} left open ${left === 1 ? "stays" : "stay"} on this list.` : ""}`;
+  const note = blocked ? "Its question menu is open: answer that one too, so GenAgent UI can close the menu and send everything together."
+    : `${ref.l.pendingAsk ? "GenAgent UI closes its question menu (Esc), then types this as your next message." : "Typed into the session as your next message."}${left && answered ? ` ${plural(left, "question")} left open ${left === 1 ? "stays" : "stay"} on this list.` : ""}`;
   return `<div class="card reply" id="reply">
     <div class="rh"><span>Your reply to ${esc(S.labels[ref.harness] || "the agent")}</span><span class="sp"></span><span class="num">${answered}/${rep.length} answered</span></div>
     <textarea id="replytext-${hid(refKey(ref))}" class="replytext" data-keep data-rk="${esc(refKey(ref))}" rows="3" placeholder="Pick answers above and they gather here as one message. Add anything else you want to say." aria-label="Your reply"></textarea>
@@ -787,7 +791,8 @@ function renderTerm() {
   // Until the CLI is up, the frame says so, rather than showing an empty box.
   const boot = $("#tboot"); boot.hidden = !(l.alive && l.status === "starting");
   if (!boot.hidden) boot.innerHTML = `<span class="spin"></span>${esc(S.labels[l.harness] || "The agent")} is starting in ${esc(shortPath(l.cwd))}…`;
-  morph($("#tstrip"), `${icon("term")}${l.fresh ? `<button class="tpick" data-act="fresh-harness" title="Switch to another agent">${esc(S.labels[l.harness])}${icon("chevd", "s12")}</button><button class="tpick cwd" data-act="fresh-folder" title="${esc(l.cwd)}">${icon("folder", "s14")}${esc(shortPath(l.cwd))}${icon("chevd", "s12")}</button>` : `<b>${esc(S.labels[l.harness])}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span>`}<span class="sp"></span>
+  const tl = l.shell ? (l.harness === "claude" ? "Terminal · Claude Code" : "Terminal") : S.labels[l.harness];
+  morph($("#tstrip"), `${icon("term")}${l.fresh ? `<button class="tpick" data-act="fresh-harness" title="Switch to another agent">${esc(S.labels[kindOf(l)])}${icon("chevd", "s12")}</button><button class="tpick cwd" data-act="fresh-folder" title="${esc(l.cwd)}">${icon("folder", "s14")}${esc(shortPath(l.cwd))}${icon("chevd", "s12")}</button>` : `<b>${esc(tl)}</b><span class="cwd" title="${esc(l.cwd)}">${esc(l.cwd)}</span>`}<span class="sp"></span>
     ${l.alive ? `<button class="btn btn-text" data-act="term-int">Interrupt</button><button class="btn btn-text" data-act="term-clear" title="Clears this window's view of the terminal; the session is untouched">Clear screen</button>` : ""}`);
   let t = terms.get(l.id);
   if (!t) {
@@ -936,7 +941,7 @@ async function asideSend(ref) {
 }
 
 // Send your reply: every answer in one message, typed in as your next message. If its question menu
-// is open, GenUI closes it first (Esc, once). Answered asks clear at once and are recorded, so they
+// is open, GenAgent UI closes it first (Esc, once). Answered asks clear at once and are recorded, so they
 // don't come back before the AI has read the reply.
 async function sendReply(ref) {
   const ta = $(".replytext"), text = ((ta && ta.value) || "").trim();
@@ -1115,16 +1120,16 @@ function newGoalHTML() {
   }
   // Sending starts the harness with exactly what you typed, as if typed into it at home. Planning a
   // goal into several agents first is a separate, optional action.
-  const h = S.labels[ng.harness] || "Claude Code";
+  const h = S.labels[ng.harness] || "Claude Code", isTerm = ng.harness === "terminal";
   const planning = S.page === "plan";
   return `<header class="head"><div class="head-t">${planning ? "Plan a goal" : "New session"}</div>${planning ? `<div class="head-meta">Breaks a bigger goal into steps, each run by its own agent</div>` : ""}</header>
   <div class="scroll"><div class="newgoal">
     ${planning ? planHTML : ""}
-    ${planning && (ng.plan || ng.busy) ? "" : `<div class="composer" id="ng-composer"><textarea id="ng-goal" data-keep data-draft="ng-goal" rows="2" placeholder="${planning ? "Describe the goal to plan" : `Message ${esc(h)}`}" aria-label="${planning ? "Goal" : "First message"}"></textarea>
+    ${planning && (ng.plan || ng.busy) ? "" : `<div class="composer" id="ng-composer"><textarea id="ng-goal" data-keep data-draft="ng-goal" rows="2" placeholder="${planning ? "Describe the goal to plan" : isTerm ? "Type a command, e.g. claude --dangerously-skip-permissions" : `Message ${esc(h)}`}" aria-label="${planning ? "Goal" : isTerm ? "First command" : "First message"}"></textarea>
       <div class="tbar"><button class="pill" data-act="pick-folder" id="ng-folder">${icon("folder")}<span>${ng.cwd ? esc(shortPath(ng.cwd)) : "Choose a folder"}</span></button>
         <button class="pill" data-act="ng-harness" title="Which agent to start">${icon("term")}<span>${esc(h)}</span></button><span class="sp"></span>
-        ${planning ? `<button class="send" data-act="plan" aria-label="Plan it" title="Plan it into steps">${icon("up")}</button>` : `<button class="send" data-act="start-now" aria-label="Start ${esc(h)}" title="Start ${esc(h)} with this message" ${S.inflight.has("start-now") ? "disabled" : ""}>${icon("up")}</button>`}</div></div>
-      <div class="hint">${planning ? "Plans the goal into steps, assigns an agent to each, and asks up front what each step will need." : `Starts ${esc(h)} in that folder with your message, exactly as in your terminal.`}</div>`}
+        ${planning ? `<button class="send" data-act="plan" aria-label="Plan it" title="Plan it into steps">${icon("up")}</button>` : `<button class="send" data-act="start-now" aria-label="Start ${esc(h)}" title="${isTerm ? "Open a terminal and run this" : `Start ${esc(h)} with this message`}" ${S.inflight.has("start-now") ? "disabled" : ""}>${icon("up")}</button>`}</div></div>
+      <div class="hint">${planning ? "Plans the goal into steps, assigns an agent to each, and asks up front what each step will need." : isTerm ? "Opens your shell in that folder and runs this command. Start claude there with any flags you like; the rail follows it." : `Starts ${esc(h)} in that folder with your message, exactly as in your terminal.`}</div>`}
   </div></div>`;
 }
 
@@ -1146,7 +1151,7 @@ document.addEventListener("click", async (e) => {
       case "stop-ask": S.stopAsk = S.stopAsk === ref.id ? null : ref.id; render(); break;
       case "stop-cancel": S.stopAsk = null; render(); break;
       case "stop-session": S.stopAsk = null; render(); await api(`/api/sessions/${ref.id}/stop`, {}); break;
-      case "new-here": await newSession(ref.cwd, ref.harness); break;
+      case "new-here": await newSession(ref.cwd, kindOf(ref)); break;
       case "new-session": await newSession(); break;
       case "rail-toggle": S.railOpen = !S.railOpen; render(); break;
       // Split: sessions side by side, each a pane. The sidebar fills the pane you're in.
@@ -1159,7 +1164,7 @@ document.addEventListener("click", async (e) => {
       case "split-go": S.page = "split"; render(); break;
       // Before you send anything, a new session can still move to another folder or agent.
       case "fresh-folder": openPicker(el, ref.cwd); S.picker.fresh = ref.id; break;
-      case "fresh-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); await newSession(ref.cwd, av[(av.indexOf(ref.harness) + 1) % av.length], ref.id); break; }
+      case "fresh-harness": { const av = startable(), k = kindOf(ref); await newSession(ref.cwd, av[(av.indexOf(k) + 1) % av.length], ref.id); break; }
       case "session-close": { await api(`/api/sessions/${ref.id}/forget`, {}); S.live.delete(ref.id); go("overview"); refresh().catch(() => {}); break; }
       case "interrupt": await api(`/api/sessions/${ref.id}/interrupt`, { key: "esc" }); break;
       case "term-int": await api(`/api/sessions/${ref.id}/interrupt`, { key: "ctrlc" }); break;
@@ -1209,7 +1214,7 @@ document.addEventListener("click", async (e) => {
       // "Use this folder" means the path in the box, typed or not yet browsed to.
       case "pk-use": await chooseFolder(($("#pk-path")?.value || "").trim() || S.picker.path, el.dataset.sure === "1"); break;
       case "pk-pick": await chooseFolder(el.dataset.p, false); break;
-      case "ng-harness": { const av = ["claude", "codex", "grok"].filter((h) => S.harnesses[h]); S.ng.harness = av[(av.indexOf(S.ng.harness) + 1) % av.length]; render(); break; }
+      case "ng-harness": { const av = startable(); S.ng.harness = av[(av.indexOf(S.ng.harness) + 1) % av.length]; render(); break; }
       case "start-now": await startNow(); break;
       case "plan": await planIt(); break;
       case "plan-reset": S.ng.err = ""; render(); break;
@@ -1323,6 +1328,11 @@ async function guarded(key, fn) {
   try { return await fn(); } finally { S.inflight.delete(key); render(); }
 }
 async function resume(ref, fork) {
+  // A Terminal session's claude resumes in a new terminal, as you'd type it, so your flags are yours to add.
+  if (!fork && ref.l && ref.l.shell && ref.l.claudeId) {
+    const s = await api("/api/sessions", { harness: "terminal", cwd: ref.cwd, prompt: `claude --resume ${ref.l.claudeId}` });
+    S.live.set(s.id, s); openLive(s.id); return;
+  }
   const s = await api("/api/resume", { harness: ref.harness, id: ref.id, cwd: ref.cwd, confirm: true, fork, file: ref.file });
   S.live.set(s.id, s); openLive(s.id);
 }
@@ -1341,11 +1351,11 @@ async function planIt() {
 // New session: the real terminal at once, in your most recent project (or the one given). You type
 // your first message straight into it. Left without sending anything, it is discarded.
 async function newSession(cwd, harness, replace) {
-  if (host) return host.newInPane(PANE, cwd || (current() || {}).cwd, harness || (current() || {}).harness);
-  cwd = cwd || S.ng.cwd || recentFolders()[0]; harness = harness || S.ng.harness || "claude";
+  if (host) return host.newInPane(PANE, cwd || (current() || {}).cwd, harness || kindOf(current()));
+  cwd = cwd || S.ng.cwd || recentFolders()[0]; harness = harness || S.ng.harness || "terminal";
   if (!cwd) { go("new"); return; }
   S.ng.cwd = cwd; S.ng.harness = harness;
-  const same = [...S.live.values()].find((l) => l.alive && l.fresh && l.id !== replace && l.cwd === cwd && l.harness === harness);
+  const same = [...S.live.values()].find((l) => l.alive && l.fresh && l.id !== replace && l.cwd === cwd && kindOf(l) === harness);
   if (same) { openLive(same.id); return; }
   await guarded("new-session", async () => {
     const s = await api("/api/sessions", { harness, cwd });
@@ -1430,7 +1440,7 @@ async function chooseFolder(p, sure) {
   }
   const fresh = S.picker && S.picker.fresh && S.live.get(S.picker.fresh);
   closePicker();
-  if (fresh) { await newSession(r.path, fresh.harness, fresh.id); return; }
+  if (fresh) { await newSession(r.path, kindOf(fresh), fresh.id); return; }
   S.ng.cwd = r.path; render(); $("#ng-goal")?.focus();
 }
 

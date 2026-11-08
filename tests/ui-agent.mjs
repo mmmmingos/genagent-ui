@@ -1,10 +1,10 @@
 // Drive version 1 like a person, on a real Claude Code session in sandbox/: the agent asks two
 // questions in its reply; you answer one and send; the other stays on "Needs from you", marked as
 // still open; Discuss it opens a side chat whose answer goes into your reply; a question in Claude
-// Code's own menu is answered from the rail (GenUI presses Esc once and types the answer); steps open
+// Code's own menu is answered from the rail (GenAgent UI presses Esc once and types the answer); steps open
 // to show what they touched; coming back shows what happened while you were away; the Orchestrator
 // shows each agent's Did / Needs lines and All needs. Run: node tests/ui-agent.mjs [outDir]
-// Uses its own port and data folder, so a running GenUI Agent is never touched.
+// Uses its own port and data folder, so a running GenAgent UI is never touched.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,7 +18,7 @@ const PORT = 4388, CDP = 9333;
 const STAMP = Date.now(), DATA = path.join(ROOT, "sandbox", "data-" + STAMP);
 const SANDBOX = path.join(ROOT, "sandbox", "agent-" + STAMP);
 fs.mkdirSync(path.join(SANDBOX, ".claude"), { recursive: true });
-// This scratch folder lets the agent write files and run node without asking, so the run is about GenUI.
+// This scratch folder lets the agent write files and run node without asking, so the run is about GenAgent UI.
 fs.writeFileSync(path.join(SANDBOX, ".claude", "settings.json"), JSON.stringify({ permissions: { allow: ["Write", "Edit", "Read", "Bash(node:*)"] } }, null, 2));
 const env = { ...process.env, GENUI_PORT: String(PORT), GENUI_TEST: "1", GENUI_DATA: DATA };
 for (const k of Object.keys(env)) if (/^CLAUDE(CODE)?_|^CLAUDECODE$/.test(k)) delete env[k];
@@ -64,6 +64,9 @@ try {
 
   // 0. New session is the real terminal straight away; left unused, it is discarded.
   await ev(`GENUI.S.ng.cwd = ${JSON.stringify(SANDBOX)}`);
+  // New session opens a plain terminal by default; this run is about Claude Code, so it picks that.
+  check("New session defaults to a terminal", await ev(`GENUI.S.ng.harness === 'terminal'`));
+  await ev(`GENUI.S.ng.harness = 'claude'`);
   await clickSel("#side [data-act=new-session]");
   check("New session: the terminal shows at once, full width, with no empty rail", await waitFor(`!document.getElementById('termwrap').hidden && document.querySelector('.main').classList.contains('norail') && !document.getElementById('railpane')`, 3000));
   check("its strip lets you switch folder and agent before you type", await waitFor(`!!document.querySelector('#tstrip [data-act=fresh-folder]') && !!document.querySelector('#tstrip [data-act=fresh-harness]')`, 3000));
@@ -152,9 +155,9 @@ try {
   check("its menu question shows in Needs from you", await waitFor(`!!GENUI.current().l.pendingAsk && /colou?r/i.test(document.querySelector('#railpane .need:not(.done):not(.block)')?.textContent||'') && !document.querySelector('#railpane .need.block')`, 180000));
   await sleep(500); await shot("menu-question");
   await clickSel(`#railpane .need:not(.done) .npill[data-v="Blue"]`);
-  check("the reply notes GenUI will close the menu first", await waitFor(`/Esc/.test(document.querySelector('#railpane .reply .note')?.textContent||'')`, 3000));
+  check("the reply notes GenAgent UI will close the menu first", await waitFor(`/Esc/.test(document.querySelector('#railpane .reply .note')?.textContent||'')`, 3000));
   await clickSel("#sendbtn");
-  check("GenUI closed the menu (one Esc) and sent the answer", await waitFor(`!GENUI.current().l.pendingAsk`, 20000));
+  check("GenAgent UI closed the menu (one Esc) and sent the answer", await waitFor(`!GENUI.current().l.pendingAsk`, 20000));
   check("Claude Code received it as your next message", await transcriptHas(s.id, /Blue/, 20000));
   check("its turn ends", await turnOver(s.id, 240000));
   await sleep(1000); await shot("after-menu");
