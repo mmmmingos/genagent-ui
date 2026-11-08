@@ -1,8 +1,17 @@
 # GenAgent UI
 
-A visual layer over your real agent sessions, built for coming back to many agents and catching up. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows what happened while you were away, everything the agent still needs from you (over the whole session, not only its last reply), and a timeline of the session you can click into. You answer it all in one reply. When you're not sure how to answer, **Discuss it** opens a side chat with its own agent that knows the session; the answer you settle on goes into your reply, so the main session's context only grows by that answer.
+Keep your coding agents running on their own. A session drifts off or stalls when your reply leaves out something the agent needed; GenAgent UI gathers everything each agent still needs from you, over the whole session, so one reply covers all of it and the agent can carry on without you. It is built for running many agents at once and coming back to them. Each agent is the actual harness (Claude Code, Codex, Grok) in its own terminal, looking and working exactly as it does at home. Beside it, a rail shows what happened while you were away, everything the agent still needs from you (over the whole session, not only its last reply), and a timeline of the session you can click into. You answer it all in one reply. When you're not sure how to answer, **Discuss it** opens a side chat with its own agent that knows the session; the answer you settle on goes into your reply, so the main session's context only grows by that answer.
 
 GenAgent UI is a wrapper: it runs your installed harness unmodified, so harness updates arrive by themselves. It watches through official interfaces where they exist, and the only key it ever presses in the harness's own menus is a single Esc to close a question you have answered on the side (see [How it stays a wrapper](#how-it-stays-a-wrapper)).
+
+![Needs from you: every open question from the whole session, answered in one reply](docs/screenshots/needs-and-reply.png)
+
+| | |
+|---|---|
+| ![Discuss it: work an answer out with a side agent that has a copy of the session](docs/screenshots/discuss-it.png) | ![The timeline: each step, the files it touched and what the agent said](docs/screenshots/timeline.png) |
+| **Discuss it**: work out an answer with a side agent that has a copy of the session, then put it in your reply. | **Timeline**: the session as sections and steps; open one to see what it did and touched. |
+| ![Orchestrator: every agent, what it did and what it needs from you](docs/screenshots/orchestrator.png) | |
+| **Orchestrator**: every agent you started, what each did and what each still needs. | |
 
 ## Start it
 
